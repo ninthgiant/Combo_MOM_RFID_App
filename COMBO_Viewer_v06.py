@@ -626,6 +626,10 @@ def do_Join_MOM_RFID():
         # Call the join function
         joined_df = join_MOM_RFID2(all_mom, all_rfid)
 
+        if True:
+            populate_mom_Windows(all_mom[['DateTime', 'Burrow',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
+            populate_RFID_Windows(all_rfid[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
+
         # Display the joined DataFrame in t3
         join_widgetst1.delete('1.0', tk.END)  # Clear existing content
         join_widgetst1.insert(tk.END, joined_df.to_string(index=False))  # Insert joined DataFrame
@@ -1094,33 +1098,27 @@ output_container = tk.Frame(root)
 output_container.pack(side=tk.TOP, pady=(20, 0))  # 20 points below button frames
 
 if False:
-    # Create the left output frame
-    output_widgets = create_output_frame(output_container, prefix="", width=50, height=50)
-    output_widgets["frame"].grid(row=0, column=0, padx=(0, 25), pady=0) 
-
-    # Create the right output frame (mom_)
-    mom_widgets = create_output_frame(output_container, prefix="mom_", width=50, height=50)
-    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(25, 0), pady=0)
+    pass
 else:
     # Three columns with your original labels
-    output_widgets = create_output_frame_var(output_container, n=2,
-                                        label_texts=["All Records", "RFIDs"])
+    output_widgets = create_output_frame_var(output_container, n=1, height=20,
+                                        label_texts=["RFIDs"])
     output_widgets["frame"].grid(row=0, column=0, padx=(0, 25), pady=0) 
 
     # Two columns for MOM
-    mom_widgets = create_output_frame_var(output_container, prefix="mom_", n=2,
-                                    label_texts=["Traces", "Details"])
+    mom_widgets = create_output_frame_var(output_container, prefix="mom_", n=1,height=20,
+                                    label_texts=["Traces"])
     mom_widgets["mom_frame"].grid(row=0, column=1, padx=(25, 0), pady=0)
 
-# Make a join container for the joined data
-# Create the join_container frame (1 text widget, width=150, custom label)
-join_widgets = create_output_frame_var(
-    parent=root,                      # or the parent container you want it under
-    prefix="join_widgets",                   # prefix for widget keys,
-    n=1,                              # only 1 text widget
-    width=150,                        # wider text widget
-    height=50,                        # same height as others
-    label_texts=["MOM Traces / RFID"]       # custom label
+    # Make a join container for the joined data
+    # Create the join_container frame (1 text widget, width=150, custom label)
+    join_widgets = create_output_frame_var(
+        parent=root,                      # or the parent container you want it under
+        prefix="join_widgets",                   # prefix for widget keys,
+        n=1,                              # only 1 text widget
+        width=140,                        # wider text widget
+        height=50,                        # same height as others
+        label_texts=["MOM Traces / RFID"]       # custom label
 )
 
 # Place join_container below the previous container
