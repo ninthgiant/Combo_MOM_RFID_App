@@ -38,6 +38,22 @@ global vAppName
 vVersString = " (v_01)"  ## upDATE AS NEEDED - v04 July 18 - add first and last readers enocuntered
 vAppName = "Combo Viewer" + vVersString
 
+########################### 
+#   function: format_time_cols  
+#       Takes a dataframe and formats all columns ending in _Time to the given date_fmt
+#       If cols is given, only formats those columns
+#       usage:out = format_time_cols(out, date_fmt, cols=["MOM_Time", "RFID_Time"])
+##########
+def format_time_cols(df, date_fmt, cols=None, as_string=True):
+    if cols is None:
+        cols = [c for c in df.columns if c.endswith("_Time")]
+    for c in cols:
+        s = pd.to_datetime(df[c], errors="coerce")
+        df[c] = s.dt.strftime(date_fmt).fillna("") if as_string else s
+    return df
+
+
+
 ##########################
 #   function: return_folder_path
 #       Opens a dialog to select a folder and prints the path and files in it
@@ -626,6 +642,9 @@ def do_Join_MOM_RFID():
         # Call the join function
         joined_df = join_MOM_RFID2(all_mom, all_rfid)
 
+        if True:
+            all_mom = format_time_cols(all_mom, date_fmt, cols=['DateTime'])
+            all_rfid = format_time_cols(all_rfid, date_fmt, cols=['PIT_DateTime'])
         if True:
             populate_mom_Windows(all_mom[['DateTime', 'Burrow',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
             populate_RFID_Windows(all_rfid[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
