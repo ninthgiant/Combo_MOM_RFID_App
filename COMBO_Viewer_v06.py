@@ -26,7 +26,7 @@ import os  # Import the os module for file operations
 dataframe = pd.DataFrame() 
 
 # universal date time format
-date_fmt = '%m-%d-%Y %H:%M:%S'
+date_fmt = '%m/%d/%Y %H:%M:%S'
 
 # universal day only format
 day_only_fmt = '%m-%d-%Y'
@@ -52,13 +52,40 @@ def format_time_cols(df, date_fmt, cols=None, as_string=True):
         df[c] = s.dt.strftime(date_fmt).fillna("") if as_string else s
     return df
 
+###########################
+#   function: filter_outside_hours
+#       Filters a DataFrame to return rows where the hour of a specified datetime column
+#       is outside a specified range (before hr_am or after hr_pm).
+#       Parameters:
+#           df (pd.DataFrame): The DataFrame to filter.
+#           datetime_col (str): The name of the datetime column to check.
+#           hr_am (int): The hour before which to filter (e.g., 7 for 7 AM).
+#           hr_pm (int): The hour after which to filter (e.g., 20 for 8 PM).
+#       Returns:
+#           pd.DataFrame: A DataFrame containing only the rows where the hour is outside the specified range.
+###########
+def filter_outside_hours(df, datetime_col, hr_am, hr_pm):
+
+    # Ensure datetime
+    if not pd.api.types.is_datetime64_any_dtype(df[datetime_col]):
+        df = df.copy()
+        df[datetime_col] = pd.to_datetime(df[datetime_col], errors="coerce")
+
+    valid_time = df[datetime_col].notna()
+    hours_mask = valid_time & (
+        (df[datetime_col].dt.hour < hr_am) |
+        (df[datetime_col].dt.hour > hr_pm)
+    )
+    return df.loc[hours_mask].copy()
+
+
 
 
 ##########################
 #   function: return_folder_path
 #       Opens a dialog to select a folder and prints the path and files in it
 #       If do_print is True, it will print the folder path and all files in it
-
+#######
 def return_folder_path():
     global do_print
     folder_path = filedialog.askdirectory()
@@ -80,6 +107,55 @@ def return_useful_name(the_path):
     where = the_path.rfind("/")
     the_name = the_path[(where + 1):(len(the_path)-4)]
     return the_name
+
+#############
+# extract_burrow: takes a filename string and returns the burrow code
+####
+def extract_burrow(val):
+    s = str(val)
+
+    # Remove file extension if present (.txt, .csv, any case)
+    for ext in (".txt", ".csv"):
+        if s.lower().endswith(ext):
+            s = s[: -len(ext)]
+            break
+
+    # Take the last 3 characters
+    s = s[-3:]
+
+    # Handle case like "5_3"
+    if len(s) >= 2 and s[1] == "_":
+        return s[2:].zfill(3)  # pad to 3 digits
+    return s.replace("_", "").zfill(3)
+
+
+ #############
+ #       --- Clean Burrow formatting ---
+ ##
+def clean_burrow2(val: str) -> str:
+    s = str(val)
+    if len(s) >= 2 and s[1] == "_":  # e.g., '5_3'
+        return s[2:]  # drop first two chars ('5' and '_')
+    return s.replace("_", "")  # remove all underscores
+
+def clean_burrow(val: str) -> str:
+    s = str(val)
+
+    # Remove file extension if present (.txt, .csv, any case)
+    for ext in (".txt", ".csv"):
+        if s.lower().endswith(ext):
+            s = s[: -len(ext)]
+            break
+
+    # Handle case like "5_3"
+    if len(s) >= 2 and s[1] == "_":  # e.g., '5_3'
+        s = s[2:]
+    else:
+        s = s.replace("_", "")
+
+    # Return only if it's digits
+    return s.zfill(3) if s.isdigit() else ""
+
 
 def load_one_MOM_file():
     global dataframe
@@ -104,7 +180,10 @@ def load_one_MOM_file():
                     else:
                         raise ValueError("Unsupported file format. Please select a CSV or text file.")
                     
-                    populate_mom_Windows(dataframe) # moved this code to this function 7/18/2024 - can use it with one file or many files
+                    # populate_mom_Windows(dataframe) # moved this code to this function 7/18/2024 - can use it with one file or many files
+                    populate_mom_Windows(dataframe[['DateTime', 'Burrow',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
+                    
+
 
                 
             else:
@@ -156,6 +235,9 @@ def get_All_MOM_data(
                 )
                 # Extract burrow code from 'File' column
                 df_temp['Burrow'] = df_temp['File'].astype(str).str[-7:-4]
+                    # chg
+                df_temp["Burrow"] = df_temp["Burrow"].astype(str).apply(clean_burrow)
+
                 all_dfs.append(df_temp)
             except Exception as e:
                 print(f"Error reading {filename}: {e}")
@@ -170,23 +252,32 @@ def get_All_MOM_data(
     # Rename columns
     df_MOM.rename(columns={'File': 'MOM_File', 'Trace_Segment_Num': 'Segment', 'Wt_Min_Slope': 'Wt'}, inplace=True)
 
-    populate_mom_Windows(df_MOM[['DateTime', 'Burrow',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
+    # CHG populate_mom_Windows(df_MOM[['DateTime', 'Burrow',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
+
+    df_MOM.sort_values(by=["Burrow", "DateTime"], inplace=True)
 
 
     return df_MOM
 
 ##########################
 #   function: load_all_MOM_files
-#       Calls get_All_RFID_data to get all RFID data in a folder
+#       Calls get_All_MOM_data to get all MOM data in a folder
 #       Puts it in the global dataframe
 #       Then populates the windows with that data
 ########    
 def load_all_MOM_files():
-    global all_mom # use this to hold the dataframe for all RFID data for combo work?
+    global all_mom # use this to hold the dataframe for all MOM data for combo work?
     df_all_mom = get_All_MOM_data()
+
+
     # print(df_all_rfid.head(10))  # Print first 10 rows for verification
-    populate_mom_Windows(df_all_mom[['MOM_File', 'Segment', 'DateTime', 'Wt_Min_Slope', 'Burrow']]) 
+    # populate_mom_Windows(df_all_mom[['MOM_File', 'Segment', 'DateTime', 'Wt_Min_Slope', 'Burrow']]) # only if we have wider text window
+    print("populate_mom_Windows")
+    populate_mom_Windows(df_all_mom[['DateTime', 'Burrow', 'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
+
     return df_all_mom 
+
+
 
 
 ##########################
@@ -360,6 +451,10 @@ def get_All_RFID_data(
                 # Add the filename column
                 df_temp['RF_File'] = filename
                 df_temp['Burrow'] = df_temp['RF_File'].astype(str).str[-7:-4]
+                # df_temp["Burrow"] = df_temp["File"].apply(extract_burrow)
+
+                    # chg
+                df_temp["Burrow"] = df_temp["Burrow"].astype(str).apply(clean_burrow)
                 
                 all_dfs.append(df_temp)
             except Exception as e:
@@ -372,6 +467,8 @@ def get_All_RFID_data(
     # Combine and drop duplicates
     df_RFID = pd.concat(all_dfs, ignore_index=True).drop_duplicates()
 
+    df_RFID.sort_values(by=["Burrow", "PIT_DateTime"], inplace=True)
+
     return df_RFID
 
 ##########################
@@ -381,10 +478,13 @@ def get_All_RFID_data(
 #       Then populates the windows with that data
 ########    
 def load_all_RFID_files():
-    global all_rfid # use this to hold the dataframe for all RFID data for combo work?
+    # global all_rfid # use this to hold the dataframe for all RFID data for combo work?
     df_all_rfid = get_All_RFID_data()
-    # print(df_all_rfid.head(10))  # Print first 10 rows for verification
-    populate_RFID_Windows(df_all_rfid[['PIT_ID', 'Rdr', 'PIT_DateTime']]) 
+    df_all_rfid = format_time_cols(df_all_rfid, date_fmt, cols=['PIT_DateTime'])
+    # chg   
+    # df_all_rfid["Burrow"] = df_all_rfid["Burrow"].astype(str).apply(clean_burrow)
+
+    populate_RFID_Windows(df_all_rfid[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
     return df_all_rfid 
 
 ##########################
@@ -642,12 +742,17 @@ def do_Join_MOM_RFID():
         # Call the join function
         joined_df = join_MOM_RFID2(all_mom, all_rfid)
 
+        ### now reduce the columns to just nighttime hours
+        mom_night = filter_outside_hours(all_mom, "DateTime", 7, 20)
+        rfid_night = filter_outside_hours(all_rfid, "PIT_DateTime", 7, 20)
+
         if True:
-            all_mom = format_time_cols(all_mom, date_fmt, cols=['DateTime'])
-            all_rfid = format_time_cols(all_rfid, date_fmt, cols=['PIT_DateTime'])
+            mom_night = format_time_cols(mom_night, date_fmt, cols=['DateTime'])
+            rfid_night = format_time_cols(rfid_night, date_fmt, cols=['PIT_DateTime'])
+
         if True:
-            populate_mom_Windows(all_mom[['DateTime', 'Burrow',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
-            populate_RFID_Windows(all_rfid[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
+            populate_mom_Windows(mom_night[['DateTime', 'Burrow',  'Wt']]) 
+            populate_RFID_Windows(rfid_night[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
 
         # Display the joined DataFrame in t3
         join_widgetst1.delete('1.0', tk.END)  # Clear existing content
@@ -852,14 +957,12 @@ def join_MOM_RFID2(
     desired_order = ["Burrow", "MOM_File", "MOM_Time", "Segmnt", "Wt", "RFID", "N", "Rdr", "RFID_Time", "RF_File"]
     out = out[[c for c in desired_order if c in out.columns]]
 
- # --- Clean Burrow formatting ---
-    def clean_burrow(val: str) -> str:
-        s = str(val)
-        if len(s) >= 2 and s[1] == "_":  # e.g., '5_3'
-            return s[2:]  # drop first two chars ('5' and '_')
-        return s.replace("_", "")  # remove all underscores
+
 
     out["Burrow"] = out["Burrow"].astype(str).apply(clean_burrow)
+
+    out = format_time_cols(out, date_fmt, cols=['MOM_Time', 'RFID_Time'])
+
 
         # Sort by numeric Burrow when possible, then MOM_Time
     out["Burrow_sort"] = pd.to_numeric(out["Burrow"], errors="coerce")
