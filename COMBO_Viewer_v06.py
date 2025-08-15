@@ -272,10 +272,10 @@ def populate_RFID_Windows(df_rfid):
     t1.insert(tk.END, df_rfid.to_string(index=False))
 
     # Update Days menu with unique days from PIT_DateTime
-    update_days_menu(df_rfid)
+    # update_days_menu(df_rfid)
 
     # Update Unique Tags menu with unique PIT_IDs
-    update_Unique_Tags_menu(df_rfid)
+    # update_Unique_Tags_menu(df_rfid)
 
     # Update the label showing the number of records
     record_count = len(df_rfid)
