@@ -33,7 +33,7 @@ global do_print
 do_print = True  # Set to True to enable print statements for debugging
 global vVersString
 global vAppName
-vVersString = " (v_01)"  ## upDATE AS NEEDED - v04 July 18 - add first and last readers enocuntered
+vVersString = " (v_01 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
 vAppName = "Combo Viewer" + vVersString
 
 ########################### 
@@ -77,8 +77,6 @@ def filter_outside_hours(df, datetime_col, hr_am, hr_pm):
     return df.loc[hours_mask].copy()
 
 
-
-
 ##########################
 #   function: return_folder_path
 #       Opens a dialog to select a folder and prints the path and files in it
@@ -99,7 +97,8 @@ def return_folder_path():
         for file_name in files: print(file_name)
 
 #############
-# return_useful_name: takes a path string and returns just the name of the file
+#   return_useful_name: takes a path string and returns just the name of the file
+#     used for displaying the file name in the GUI
 ####
 def return_useful_name(the_path):
     where = the_path.rfind("/")
@@ -107,35 +106,11 @@ def return_useful_name(the_path):
     return the_name
 
 #############
-# extract_burrow: takes a filename string and returns the burrow code
+# clean_burrow: takes the last 7 characters of a filename and returns the burrow number
+#     - removes file extension if present (.txt, .csv, any case)    
+#     - takes the last 3 characters
+#     - returns the burrow number padded to 3 digits becuase we treat it as charccters
 ####
-def extract_burrow(val):
-    s = str(val)
-
-    # Remove file extension if present (.txt, .csv, any case)
-    for ext in (".txt", ".csv"):
-        if s.lower().endswith(ext):
-            s = s[: -len(ext)]
-            break
-
-    # Take the last 3 characters
-    s = s[-3:]
-
-    # Handle case like "5_3"
-    if len(s) >= 2 and s[1] == "_":
-        return s[2:].zfill(3)  # pad to 3 digits
-    return s.replace("_", "").zfill(3)
-
-
- #############
- #       --- Clean Burrow formatting ---
- ##
-def clean_burrow2(val: str) -> str:
-    s = str(val)
-    if len(s) >= 2 and s[1] == "_":  # e.g., '5_3'
-        return s[2:]  # drop first two chars ('5' and '_')
-    return s.replace("_", "")  # remove all underscores
-
 def clean_burrow(val: str) -> str:
     s = str(val)
 
@@ -154,7 +129,10 @@ def clean_burrow(val: str) -> str:
     # Return only if it's digits
     return s.zfill(3) if s.isdigit() else ""
 
-
+#############
+#   load_one_MOM_file:
+#     Not used right now. May reinstate it in the future - was used in development
+####
 def load_one_MOM_file():
     global dataframe
     
@@ -276,10 +254,8 @@ def load_all_MOM_files():
     return df_all_mom 
 
 
-
-
 ##########################
-#   function: load_file
+#   function: load_file - NOT USED at this time. Maybe be reinstated in the future
 #       Mac interface to open a single RFID file
 #       Once opened, put in dataframe and display
 #       For now, it builds global dataframe, but could return the dataframe instead - for later?
@@ -319,27 +295,30 @@ def load_file():
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file: {e}")
 
+###########################
+#   function: clear_text_widgets
+#       Clears the content of all Text widgets in the given widget dictionary
+#       utility function for GUI
+#########
 def clear_text_widgets(widget_dict):
-    """
-    Clears the content of all Text widgets in the given widget dictionary
-    whose keys start with 't' (e.g., 't1', 'mom_t2', etc.).
-    """
     for key, widget in widget_dict.items():
         if isinstance(widget, tk.Text) and key.lstrip("_").split("_")[-1].startswith("t"):
             widget.delete("1.0", tk.END)
 
+###########################
+#   function: set_text_widget
+#       Sets the font for all Text widgets in the given widget dictionary
+#       Sets the font to the specified font name and size
+#       Parameters:
+#           - output_frame_dict (dict): Dictionary of widgets returned from create_output_frame()
+#           - font_name (str): Font family name (default: Arial)
+#           - font_size (int): Font size in points (default: 14)
+#       utility function for GUI
+#########
 def set_text_widget_font(output_frame_dict, font_name="Arial", font_size=14):
-    """
-    Set the font for all tk.Text widgets in the given output frame dictionary.
-
-    :param output_frame_dict: Dictionary of widgets returned from create_output_frame()
-    :param font_name: Font family name (default: Arial)
-    :param font_size: Font size in points (default: 14)
-    """
     for widget in output_frame_dict.values():
         if isinstance(widget, tk.Text):
             widget.config(font=(font_name, font_size))
-
 
 
 ##########################
@@ -347,28 +326,24 @@ def set_text_widget_font(output_frame_dict, font_name="Arial", font_size=14):
 #       Takes a dataframe and puts it in the t1 window
 #       Also updates the Days menu and Unique Tags menu
 #       Updates the label showing the number of records
+#       utility function for GUI
+########
 def populate_RFID_Windows(df_rfid):
 
     if df_rfid.empty:
         messagebox.showwarning("Warning", "DataFrame is empty. Please load data first.")
         return
-
     # Clear existing content in t1, t2, and t3
     clear_text_widgets(output_widgets)
     
-
     # Insert the entire dataframe into t1
     t1.insert(tk.END, df_rfid.to_string(index=False))
-
-    # Update Days menu with unique days from PIT_DateTime
-    # update_days_menu(df_rfid)
-
-    # Update Unique Tags menu with unique PIT_IDs
-    # update_Unique_Tags_menu(df_rfid)
 
     # Update the label showing the number of records
     record_count = len(df_rfid)
     # label_all_records.config(text=f"All Records ({record_count})")
+    # widgets["label_all_records"].config(text=f"All Records ({record_count})")
+
 
 ##########################
 #   function: populate_mom_Windows
@@ -386,12 +361,6 @@ def populate_mom_Windows(df_mom):
 
     # Insert the entire dataframe into t1
     mom_t1.insert(tk.END, df_mom.to_string(index=False))
-
-    # Update Days menu with unique days from PIT_DateTime
-    # update_days_menu(df_rfid)
-
-    # Update Unique Tags menu with unique PIT_IDs
-    # update_Unique_Tags_menu(df_rfid)
 
     # Update the label showing the number of records
     record_count = len(df_mom)
@@ -449,9 +418,7 @@ def get_All_RFID_data(
                 # Add the filename column
                 df_temp['RF_File'] = filename
                 df_temp['Burrow'] = df_temp['RF_File'].astype(str).str[-7:-4]
-                # df_temp["Burrow"] = df_temp["File"].apply(extract_burrow)
 
-                    # chg
                 df_temp["Burrow"] = df_temp["Burrow"].astype(str).apply(clean_burrow)
                 
                 all_dfs.append(df_temp)
@@ -532,190 +499,6 @@ def update_days_menu(dataframe=None):
     except Exception as e:
         messagebox.showerror("Error", f"Failed to update Days menu: {e}")
 
-##########################
-#   function: update_Unique_Tags_menu
-#       Gets list of unique days from the dataframe
-#       Builds a list of those days and puts them in a popup widget
-#       Handles the user choosing a day from the popup by calling show_records_by_day 
-########
-def update_Unique_Tags_menu(dataframe=None  ):
-    #   global dataframe
-    
-    my_Tags = show_pit_tags(dataframe)
-
-    try:
-        
-        if my_Tags.empty:
-            print("DataFrame is empty or 'PIT_DateTime' column not found.")
-            return
-        
-        
-        # Clear existing menu items
-        days_menu.delete(0, tk.END)
-
-        # Clear existing menu items
-        pit_menu.delete(0, tk.END)
-
-        print("now ad pit to mb_pit")
-        
-        # Add days to the menu
-       # for pit in my_Tags:
-        #    pit_menu.add_command(label='Unique RFID', command=lambda p=pit: show_records_by_pit(p))
-
-        for pit_id in my_Tags['PIT_ID']:
-                pit_menu.add_command(label=str(pit_id), command=lambda p=pit_id: show_records_by_PIT(p))
-
-
-        print("done ad pit to mb_pit")
-        
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to update Days menu: {e}")
-
-##########################
-#   function: show_pit_tags
-#       Gets list of unique tags from the dataframe
-#       Builds a list of those tags and puts them in window t2
-#       NOT USED as of 7/18/2024, but may be used in the future 
-########
-def show_pit_tags(dataframe=None):
-    try:
-        unique_pit_tags = dataframe[['PIT_ID']].drop_duplicates()
-        
-        # Clear existing content in t2
-        t2.delete('1.0', tk.END)
-        
-        # Insert unique PIT Tags into t2
-        for index, row in unique_pit_tags.iterrows():
-            t2.insert(tk.END, f"{row['PIT_ID']}\n")
-        
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to retrieve PIT Tags: {e}")
-
-    return unique_pit_tags
-
-##########################
-#   function: show_records_by_PIT
-#       Gets list of records for a particular night - 8PM of chosen day until 6AM of next day
-#       Builds a list of those tags and puts them in window t2
-#       Tallies all PIT records for each bird found during that window and when they were there 
-########
-def show_records_by_PIT(selected_pit, dataframe=None):
-
-    print("In show_records_by_pit")
-    try:
-        # global dataframe
-        
-        # Print the dataframe with selected columns
-        print("DataFrame before finding all for one PIT:")
-        print(dataframe[['PIT_ID', 'Rdr']])  # Correct way to select multiple columns
-        
-        # Filter dataframe by selected PIT_ID
-        filtered_df = dataframe[dataframe['PIT_ID'] == selected_pit]
-        
-        print("Get Selected records:")
-        print(filtered_df)
-     
-        
-        # Clear existing content in t2 and t3
-        # t2.delete('1.0', tk.END)
-        t3.delete('1.0', tk.END)
-
-        ## update the label
-        record_count = len(filtered_df)
-        
-        print("Good to here - after record count")
-
-        label_one_day.config(text=f"Records for {selected_pit} ({record_count} records)")
-
-        insert_dataframe_into_widget(filtered_df, t3)
-
-        print("Good to here - after insert to widget")
-        
-        # Display earliest and latest datetime for each PIT ID in t3
-        for pit_id in filtered_df['PIT_ID'].unique():
-            pit_subset = filtered_df[filtered_df['PIT_ID'] == pit_id]
-            earliest_datetime = pit_subset['PIT_DateTime'].min()
-            latest_datetime = pit_subset['PIT_DateTime'].max()
-            # get the readers that read the earliest and latest
-            # first_rdr = pit_subset['Rdr'].iloc[0]  # Value in the first row
-            # last_rdr = pit_subset['Rdr'].iloc[-1]  # Value in the last row
-
-            # Format datetime into %m-%d-%Y format
-            formatted_earliest = earliest_datetime.strftime(date_fmt)
-            formatted_latest = latest_datetime.strftime(date_fmt)
-
-            # Count records for current PIT ID
-            record_count = len(pit_subset)
-
-            t3.insert(tk.END, f"PIT ID: {pit_id}\n")
-            #t3.insert(tk.END, f"\tFirst: \t{formatted_earliest}\tRdr: {first_rdr}\n")
-            #t3.insert(tk.END, f"\tLast: \t{formatted_latest}\tRdr: {last_rdr}\n")
-            t3.insert(tk.END, f"\tRecords Count: \t{record_count}\n\n")
-            print("Good to here - each line")
-
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to retrieve records: {e}")
-
-
-##########################
-#   function: show_records_by_day
-#       Gets list of records for a particular night - 8PM of chosen day until 6AM of next day
-#       Builds a list of those tags and puts them in window t2
-#       Tallies all PIT records for each bird found during that window and when they were there 
-########
-def show_records_by_day(selected_day):
-    try:
-        global dataframe
-        
-        # Convert selected_day to datetime object
-        selected_date = pd.to_datetime(selected_day)
-        
-        # Define start and end times for the selected day
-        start_time = selected_date.replace(hour=20, minute=0, second=0)
-        end_time = selected_date + pd.Timedelta(days=1, hours=6, minutes=0, seconds=0)
-        
-        # Filter dataframe by selected day
-        filtered_df = dataframe[
-            (dataframe['PIT_DateTime'] >= start_time) & 
-            (dataframe['PIT_DateTime'] <= end_time)
-        ]
-        
-        # Clear existing content in t2 and t3
-        t2.delete('1.0', tk.END)
-        t3.delete('1.0', tk.END)
-
-        ## update the label
-        record_count = len(filtered_df)
-        
-        formatted_date = selected_day.strftime("%m-%d-%Y")
-        # label_one_day.config(text=f"Night of {formatted_date}")
-        label_one_day.config(text=f"Night of {formatted_date} ({record_count} records)")
-
-        insert_dataframe_into_widget(filtered_df, t2)
-        
-        # Display earliest and latest datetime for each PIT ID in t3
-        for pit_id in filtered_df['PIT_ID'].unique():
-            pit_subset = filtered_df[filtered_df['PIT_ID'] == pit_id]
-            earliest_datetime = pit_subset['PIT_DateTime'].min()
-            latest_datetime = pit_subset['PIT_DateTime'].max()
-            # get the readers that read the earliest and latest
-            first_rdr = pit_subset['Rdr'].iloc[0]  # Value in the first row
-            last_rdr = pit_subset['Rdr'].iloc[-1]  # Value in the last row
-
-            # Format datetime into %m-%d-%Y format
-            formatted_earliest = earliest_datetime.strftime(date_fmt)
-            formatted_latest = latest_datetime.strftime(date_fmt)
-
-            # Count records for current PIT ID
-            record_count = len(pit_subset)
-
-            t3.insert(tk.END, f"PIT ID: {pit_id}\n")
-            t3.insert(tk.END, f"\tFirst: \t{formatted_earliest}\tRdr: {first_rdr}\n")
-            t3.insert(tk.END, f"\tLast: \t{formatted_latest}\tRdr: {last_rdr}\n")
-            t3.insert(tk.END, f"\tRecords Count: \t{record_count}\n\n")
-        
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to retrieve records: {e}")
 
 ###############################
 #   function: do_Join_MOM_RFID
@@ -760,7 +543,6 @@ def do_Join_MOM_RFID():
         record_count = len(joined_df)
         # label_joined_records.config(text=f"Joined Records ({record_count})")
 
-
         ########
         # Saving the joined MOM and RFID DataFrame to a file
         #
@@ -786,7 +568,6 @@ def do_Join_MOM_RFID():
 
     except Exception as e:
         messagebox.showerror("Error", f"Failed to join MOM and RFID data: {e}")
-
 
 
 ###########################
@@ -974,19 +755,14 @@ def join_MOM_RFID2(
     out = out.drop(columns=["_join_time_shift", "_join_time_zero", "PIT_ID"], errors="ignore")
 
     # Sort & order columns
-    # out = out.sort_values(["Burrow", "MOM_Time"], kind="mergesort").reset_index(drop=True)
-
     desired_order = ["Burrow", "MOM_File", "MOM_Time", "Segmnt", "Wt", "RFID", "N", "Rdr", "RFID_Time", "RF_File"]
     out = out[[c for c in desired_order if c in out.columns]]
 
-
-
+    # clean up data
     out["Burrow"] = out["Burrow"].astype(str).apply(clean_burrow)
-
     out = format_time_cols(out, date_fmt, cols=['MOM_Time', 'RFID_Time'])
 
-
-        # Sort by numeric Burrow when possible, then MOM_Time
+    # Sort by numeric Burrow when possible, then MOM_Time
     out["Burrow_sort"] = pd.to_numeric(out["Burrow"], errors="coerce")
     out = out.sort_values(["Burrow_sort", "MOM_Time"], kind="mergesort").drop(columns=["Burrow_sort"])
 
@@ -1065,6 +841,9 @@ def create_output_frame_var(parent, prefix: str = "", n: int = 3,
         **{f"{prefix}{k}": v for k, v in scrollbars.items()},
     }
 
+##################################
+#   GUI functions
+#######
 
 ##########################
 #   function: create_output_frame
@@ -1129,9 +908,6 @@ def assign_widget_refs(widget_dict, namespace=None):
         namespace[name] = widget
         # Optional: print for verification
         print(f"Assigned variable: {name} -> {widget}")
-
-
-
 
 ##########################
 #   What do do when you quit the app
