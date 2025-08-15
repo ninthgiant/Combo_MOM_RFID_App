@@ -774,7 +774,7 @@ def do_Join_MOM_RFID():
             )
 
             if output_file_path:
-                # Save df 'out' to file (tab-delimited, include headers)
+                # Save df to file (tab-delimited, include headers)
                 joined_df.to_csv(output_file_path, index=False, sep="\t")
                 print(f"Data saved to {output_file_path}")
             else:
