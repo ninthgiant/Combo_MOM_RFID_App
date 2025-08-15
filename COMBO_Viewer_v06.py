@@ -16,8 +16,6 @@ import pandas as pd
 import numpy as np
 import os  # Import the os module for file operations
 
-
-
 ##########################
 #   Define globally available variables
 ########
@@ -762,6 +760,30 @@ def do_Join_MOM_RFID():
         record_count = len(joined_df)
         # label_joined_records.config(text=f"Joined Records ({record_count})")
 
+
+        ########
+        # Saving the joined MOM and RFID DataFrame to a file
+        #
+        # Ask the user if they want to save the DataFrame
+        if messagebox.askyesno("Save File", "Do you want to save the combined data to file?"):
+            # Ask the user for file path and name
+            output_file_path = filedialog.asksaveasfilename(
+                title="Save Combined File As",
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+            )
+
+            if output_file_path:
+                # Save df 'out' to file (tab-delimited, include headers)
+                joined_df.to_csv(output_file_path, index=False, sep="\t")
+                print(f"Data saved to {output_file_path}")
+            else:
+                print("Save cancelled.")
+        else:
+            print("User chose not to save the DataFrame.")
+
+
+
     except Exception as e:
         messagebox.showerror("Error", f"Failed to join MOM and RFID data: {e}")
 
@@ -1161,24 +1183,28 @@ frame_buttons_date = tk.Frame(buttons_rfid_container)
 frame_buttons_date.pack(side=tk.TOP, fill=tk.X, padx=20, pady=20)
 
 # Buttons for RFID
-button_load_file = tk.Button(frame_buttons_date, text="Load File", command=load_file)
-button_load_file.pack(side=tk.RIGHT)
+if False:
+    button_load_file = tk.Button(frame_buttons_date, text="Load File", command=load_file)
+    button_load_file.pack(side=tk.RIGHT)
 
-button_load_all_RFID = tk.Button(frame_buttons_date, text="All Files", command=load_all_RFID_files)
+button_load_all_RFID = tk.Button(frame_buttons_date, text="Load RFID Files", command=load_all_RFID_files)
 button_load_all_RFID.pack(side=tk.RIGHT)
 
-button_load_file = tk.Button(frame_buttons_date, text="Birds", command=update_Unique_Tags_menu)
-button_load_file.pack(side=tk.RIGHT)
 
-mb_days = tk.Menubutton(frame_buttons_date, text="Days", indicatoron=True, borderwidth=1, relief="raised")
-mb_days.pack(side=tk.RIGHT, padx=10)
-days_menu = tk.Menu(mb_days, tearoff=0)
-mb_days.configure(menu=days_menu)
 
-mb_pit = tk.Menubutton(frame_buttons_date, text="RFID", indicatoron=True, borderwidth=1, relief="raised")
-mb_pit.pack(side=tk.RIGHT, padx=10)
-pit_menu = tk.Menu(mb_pit, tearoff=0)
-mb_pit.configure(menu=pit_menu)
+if False:
+    button_load_file = tk.Button(frame_buttons_date, text="Birds", command=update_Unique_Tags_menu)
+    button_load_file.pack(side=tk.RIGHT)
+
+    mb_days = tk.Menubutton(frame_buttons_date, text="Days", indicatoron=True, borderwidth=1, relief="raised")
+    mb_days.pack(side=tk.RIGHT, padx=10)
+    days_menu = tk.Menu(mb_days, tearoff=0)
+    mb_days.configure(menu=days_menu)
+
+    mb_pit = tk.Menubutton(frame_buttons_date, text="RFID", indicatoron=True, borderwidth=1, relief="raised")
+    mb_pit.pack(side=tk.RIGHT, padx=10)
+    pit_menu = tk.Menu(mb_pit, tearoff=0)
+    mb_pit.configure(menu=pit_menu)
 
 ##########################
 # MOM Button Container
@@ -1193,24 +1219,27 @@ mom_frame_buttons = tk.Frame(buttons_mom_container)
 mom_frame_buttons.pack(side=tk.TOP, fill=tk.X, padx=20, pady=20)
 
 # Buttons for MOM
-mom_button_load_file = tk.Button(mom_frame_buttons, text="Join RFID+MOM", command=do_Join_MOM_RFID   ) # make this one file only. debug
-mom_button_load_file.pack(side=tk.LEFT)
-
-mom_button_load_all = tk.Button(mom_frame_buttons, text="All MOMs", command=load_all_MOM_files)
+mom_button_load_all = tk.Button(mom_frame_buttons, text="Load MOM Files", command=load_all_MOM_files)
 mom_button_load_all.pack(side=tk.LEFT)
 
-mom_button_birds = tk.Button(mom_frame_buttons, text="Birds", command=update_Unique_Tags_menu)
-mom_button_birds.pack(side=tk.LEFT)
+mom_button_load_file = tk.Button(mom_frame_buttons, text="Join RFID+MOM Data", command=do_Join_MOM_RFID   ) # make this one file only. debug
+mom_button_load_file.pack(side=tk.LEFT)
 
-mom_mb_days = tk.Menubutton(mom_frame_buttons, text="Days", indicatoron=True, borderwidth=1, relief="raised")
-mom_mb_days.pack(side=tk.LEFT, padx=10)
-mom_days_menu = tk.Menu(mom_mb_days, tearoff=0)
-mom_mb_days.configure(menu=mom_days_menu)
 
-mom_mb_pit = tk.Menubutton(mom_frame_buttons, text="MOM RFID", indicatoron=True, borderwidth=1, relief="raised")
-mom_mb_pit.pack(side=tk.LEFT, padx=10)
-mom_pit_menu = tk.Menu(mom_mb_pit, tearoff=0)
-mom_mb_pit.configure(menu=mom_pit_menu)
+
+if False:
+    mom_button_birds = tk.Button(mom_frame_buttons, text="Birds", command=update_Unique_Tags_menu)
+    mom_button_birds.pack(side=tk.LEFT)
+
+    mom_mb_days = tk.Menubutton(mom_frame_buttons, text="Days", indicatoron=True, borderwidth=1, relief="raised")
+    mom_mb_days.pack(side=tk.LEFT, padx=10)
+    mom_days_menu = tk.Menu(mom_mb_days, tearoff=0)
+    mom_mb_days.configure(menu=mom_days_menu)
+
+    mom_mb_pit = tk.Menubutton(mom_frame_buttons, text="MOM RFID", indicatoron=True, borderwidth=1, relief="raised")
+    mom_mb_pit.pack(side=tk.LEFT, padx=10)
+    mom_pit_menu = tk.Menu(mom_mb_pit, tearoff=0)
+    mom_mb_pit.configure(menu=mom_pit_menu)
 
 
 ##########################
