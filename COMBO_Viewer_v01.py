@@ -419,6 +419,64 @@ def populate_mom_Windows(df_mom):
     record_count = len(df_mom)
     # mom_label_all_records.config(text=f"All Records ({record_count})")
 
+def get_All_RFID_data(
+    folder: str = "/Users/bobmauck/devel/Combo_App/Example_Data"
+) -> pd.DataFrame:
+    """
+    Load all files in 'folder' that start with 'RF' and end with '.txt',
+    combine them into a single DataFrame, remove duplicates, and return it.
+    Assumes the files have NO header row and uses:
+        ['PIT_ID', 'Rdr', 'PIT_DateTime']
+    as the column names.
+    """
+    cols_to_import = ['PIT_ID', 'Rdr', 'PIT_DateTime']
+
+    # Debug info
+    # print(f"Looking in folder: {folder}")
+    try:
+        files_in_folder = os.listdir(folder)
+        # print("Files in folder:")
+        for f in files_in_folder:
+            #print(f"  {f}")
+            pass  # Uncomment to print files in folder
+    except FileNotFoundError:
+        print(f"Error: Folder not found: {folder}")
+        return pd.DataFrame(columns=cols_to_import)
+
+    all_dfs = []
+
+    # Loop through matching files
+    for filename in files_in_folder:
+        if filename.lower().startswith("rf") and filename.lower().endswith(".txt"):
+            file_path = os.path.join(folder, filename)
+            try:
+                df_temp = pd.read_csv(
+                    file_path,
+                    delimiter=',',
+                    header=None,                # No header in file
+                    names=cols_to_import,       # Assign column names
+                    usecols=[0, 1, 2],          # Only first 3 columns
+                    on_bad_lines='warn'
+                )
+                # Add the filename column
+                df_temp['RF_File'] = filename
+                df_temp['Burrow'] = df_temp['RF_File'].astype(str).str[-7:-4]
+                df_temp["Burrow"] = df_temp["Burrow"].astype(str).apply(clean_burrow)
+                
+                all_dfs.append(df_temp)
+            except Exception as e:
+                print(f"Error reading {filename}: {e}")
+
+    if not all_dfs:
+        print("No matching files found.")
+        return pd.DataFrame(columns=cols_to_import)
+
+    # Combine and drop duplicates
+    df_RFID = pd.concat(all_dfs, ignore_index=True).drop_duplicates()
+
+    return df_RFID
+
+
 ##########################
 #   function: get_All_RFID_data
 #       Mac interface to open all RFID files in a folder - once used this folder: str = "/Users/bobmauck/devel/Combo_App/Example_Data"
@@ -428,7 +486,7 @@ def populate_mom_Windows(df_mom):
 #       Assumes the files have NO header row and uses:
 #           ['PIT_ID', 'Rdr', 'PIT_DateTime'] as the column names.
 ########
-def get_All_RFID_data(
+def get_All_RFID_dataOLD(
     folder: None | str = None
     ) -> pd.DataFrame:
 
@@ -681,31 +739,27 @@ def ensure_sorted(df: pd.DataFrame, col: str) -> pd.DataFrame:
 ##########################
 def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
                                df_rfid: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build final combined MOM + RFID dataframe:
+      1. Run join_MOM_RFID2 to get df_MOM_with_counts
+      2. Find missing-time MOM rows, filter with remove_spurious_pairs,
+         and resolve them with resolve_missing_RFIDs
+      3. Append resolved rows back to df_MOM_with_counts
+      4. Sort final DataFrame by MOM_File then MOM_Time
+      5. Enforce final schema/column order
+      6. Add Matched flag (True if RFID match found, False otherwise)
+    """
 
     desired_cols = [
         "Burrow", "MOM_File", "MOM_Time", "Segment", "Wt",
         "RFID", "N", "Rdr", "Closest_RFID_Time", "RF_File", "Matched"
     ]
-    # Ensure unique indices
-    # Ensure sorted for merge_asof
-    df_WtFiles = df_WtFiles.sort_values("DateTime", kind="mergesort").reset_index(drop=True)
-    df_rfid    = df_rfid.sort_values("PIT_DateTime", kind="mergesort").reset_index(drop=True)
-
-
-
-    print("DEBUG — df_WtFiles sorted:", df_WtFiles["DateTime"].is_monotonic_increasing)
-    print("DEBUG — df_rfid sorted:", df_rfid["PIT_DateTime"].is_monotonic_increasing)
-
-
-    # Debug check
-    print("DEBUG — df_WtFiles sorted:", df_WtFiles["DateTime"].is_monotonic_increasing)
-    print("DEBUG — df_rfid sorted:", df_rfid["PIT_DateTime"].is_monotonic_increasing)
 
     # 1. Initial join
     df_MOM_with_counts = join_MOM_RFID2(df_WtFiles, df_rfid, window="3min")
     df_MOM_with_counts["Matched"] = False
 
-    # Standardize naming
+    # --- 🔑 Standardize naming ---
     df_MOM_with_counts = df_MOM_with_counts.rename(
         columns={
             "Wt_Min_Slope": "Wt",
@@ -715,6 +769,8 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
     )
 
     # 2. Identify missing-time rows
+    df_WtFiles = df_WtFiles.copy()
+    df_WtFiles["DateTime"] = pd.to_datetime(df_WtFiles["DateTime"], errors="coerce")
     df_missing_time = df_WtFiles[
         df_WtFiles["DateTime"] == pd.Timestamp("2000-01-01 00:00:00")
     ].copy()
@@ -730,23 +786,18 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
         df_r = df_r.rename(
             columns={"Wt_Min_Slope": "Wt", "PIT_Time": "Closest_RFID_Time"}
         )
-        df_r["Matched"] = df_r["N"].fillna(0) > 0
+        df_r["Matched"] = df_r["RFID"].notna()
     else:
         df_r = pd.DataFrame(columns=desired_cols)
 
-    # Ensure both have same schema
+    # --- 🔑 Ensure both dfs have same schema ---
     df_MOM_with_counts = df_MOM_with_counts.reindex(columns=desired_cols)
     df_r = df_r.reindex(columns=desired_cols)
 
     # 4. Combine
-    final_combo_pre = pd.concat([df_MOM_with_counts, df_r], ignore_index=True)
+    final_combo = pd.concat([df_MOM_with_counts, df_r], ignore_index=True)
 
-    # Remove bad placeholder times
-    final_combo = final_combo_pre[
-        final_combo_pre["MOM_Time"] != pd.Timestamp("2000-01-01 00:00:00")
-    ].copy()
-
-    # 5. Sort final
+    # 5. Sort by MOM_File then MOM_Time
     final_combo = final_combo.sort_values(
         by=["MOM_File", "MOM_Time"], ignore_index=True
     )
@@ -761,9 +812,7 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
     return final_combo
 
 
-def get_All_Mom_data(
-    folder: str = "/Users/bobmauck/devel/Combo_App/Example_Data"
-) -> pd.DataFrame:
+def get_All_Mom_data(folder: str = None) -> pd.DataFrame:
     """
     Load all files in 'folder' that start with 'Bird_Weight_' and end with '.txt' (case-insensitive),
     combine them into a single DataFrame, remove duplicates, and return it.
@@ -773,6 +822,11 @@ def get_All_Mom_data(
         'Trace_Segment_Num' -> 'Segment'
     """
     cols_to_import = ['File', 'Trace_Segment_Num', 'DateTime', 'Wt_Min_Slope']
+
+    if folder is None:
+        folder = filedialog.askdirectory()
+        if not folder:  # User cancelled the dialog
+            print("No folder selected. Using default folder.")
 
     # Debug info
     # print(f"Looking in folder: {folder}")
@@ -824,8 +878,16 @@ def get_All_Mom_data(
 #######
 def do_Join_MOM_RFID():
 
-    df_rfid = get_All_RFID_data(None) #("/Users/bobmauck/devel/Combo_App/Example_Data")
-    df_WtFiles = get_All_Mom_data(None) # ("/Users/bobmauck/devel/Combo_App/Example_Data")
+    if False:
+        my_path = None
+    else:
+        my_path = "/Users/bobmauck/devel/Combo_App/Example_Data"    # when you want to test
+
+    # df_rfid = get_All_RFID_data(my_path) #("/Users/bobmauck/devel/Combo_App/Example_Data")
+    # df_WtFiles = get_All_Mom_data(my_path) # ("/Users/bobmauck/devel/Combo_App/Example_Data")
+
+    df_rfid = get_All_RFID_data("/Users/bobmauck/devel/Combo_App/Example_Data")
+    df_WtFiles = get_All_Mom_data("/Users/bobmauck/devel/Combo_App/Example_Data")
 
     df_WtFiles['DateTime'] = pd.to_datetime(df_WtFiles['DateTime'], errors="coerce")
 
@@ -836,7 +898,7 @@ def do_Join_MOM_RFID():
     df_finale= build_final_combo_MOM_RFID(df_WtFiles, df_rfid)
     df_finale = df_finale.sort_values(["Burrow"], kind="mergesort").reset_index(drop=True)
     print(df_finale.head(30))
-    df_finale.to_csv("df_Final_Joined4.csv", index=False)
+    df_finale.to_csv("df_Final_Joined_Good.csv", index=False)
 
 
 
