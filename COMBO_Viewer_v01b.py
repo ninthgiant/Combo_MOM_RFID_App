@@ -60,54 +60,6 @@ def format_time_cols(df, date_fmt, cols=None, as_string=True):
         df[c] = s.dt.strftime(date_fmt).fillna("") if as_string else s
     return df
 
-###########################
-#   function: filter_outside_hours
-#       Filters a DataFrame to return rows where the hour of a specified datetime column
-#       is outside a specified range (before hr_am or after hr_pm).
-#       Parameters:
-#           df (pd.DataFrame): The DataFrame to filter.
-#           datetime_col (str): The name of the datetime column to check.
-#           hr_am (int): The hour before which to filter (e.g., 7 for 7 AM).
-#           hr_pm (int): The hour after which to filter (e.g., 20 for 8 PM).
-#       Returns:
-#           pd.DataFrame: A DataFrame containing only the rows where the hour is outside the specified range.
-###########
-def filter_outside_hours(df, datetime_col, hr_am, hr_pm):
-
-    # Ensure datetime
-    if not pd.api.types.is_datetime64_any_dtype(df[datetime_col]):
-        df = df.copy()
-        df[datetime_col] = pd.to_datetime(df[datetime_col], errors="coerce")
-
-    valid_time = df[datetime_col].notna()
-    hours_mask = valid_time & (
-        (df[datetime_col].dt.hour < hr_am) |
-        (df[datetime_col].dt.hour > hr_pm)
-    )
-    return df.loc[hours_mask].copy()
-
-
-##########################
-#   function: return_folder_path
-#       Opens a dialog to select a folder and prints the path and files in it
-#       If do_print is True, it will print the folder path and all files in it
-#######
-def return_folder_path():
-    global do_print
-    folder_path = filedialog.askdirectory()
-
-    if do_print: 
-        print(folder_path)
-        all_files = os.listdir(folder_path)
-    
-        # Filter out only files (not directories)
-        files = [f for f in all_files if os.path.isfile(os.path.join(folder_path, f))]
-
-        # Print each file name
-        for file_name in files: print(file_name)
-
-import pandas as pd
-
 ##########################
 #   remove_spurious_pairs
 #       receives dataframe with [MOM] data and the column of interest df_MOM['Wt' or 'Wt_Min_Slope']
@@ -361,88 +313,6 @@ def populate_mom_Windows(df_mom):
     # mom_label_all_records.config(text=f"All Records ({record_count})")
 
 ##########################
-#   function: get_All_MOM_only_data
-#       Loads all MOM files in a folder, cleans bad/gibberish values, 
-#           - called when just showing the list of MOM data, not joining - my delete later in favor of getallMomdata
-#       enforces consistent DateTime parsing, and ensures a unique index.
-########
-def get_All_MOM_only_data(folder: None | str = None) -> pd.DataFrame:
-    """
-    Load all MOM data files in the given folder.
-    Cleans bad/gibberish rows by coercing to NaT/NaN.
-    Guarantees consistent datetime parsing and unique index.
-    """
-
-    if folder is None:
-        folder = filedialog.askdirectory()
-        if not folder:  # User cancelled
-            print("No folder selected. Using default folder.")
-            return pd.DataFrame(columns=['MOM_File', 'Segment', 'DateTime', 'Wt', 'Burrow'])
-    else:
-        folder = vTesting_Folder
-
-    cols_to_import = ['File', 'Trace_Segment_Num', 'DateTime', 'Wt_Min_Slope']
-    all_dfs = []
-
-    try:
-        files_in_folder = os.listdir(folder)
-    except FileNotFoundError:
-        print(f"Error: Folder not found: {folder}")
-        return pd.DataFrame(columns=['MOM_File', 'Segment', 'DateTime', 'Wt', 'Burrow'])
-
-    for filename in files_in_folder:
-        if filename.lower().startswith("bird_weight_") and filename.lower().endswith(".txt"):
-            file_path = os.path.join(folder, filename)
-            try:
-                df_temp = pd.read_csv(
-                    file_path,
-                    delimiter=',',
-                    usecols=cols_to_import,
-                    header=0,
-                    on_bad_lines='warn'
-                )
-
-                # --- Clean bad values ---
-                # Force datetime format if possible (adjust to your actual file format!)
-                df_temp["DateTime"] = pd.to_datetime(
-                    df_temp["DateTime"],
-                    format="%Y-%m-%d %H:%M:%S",  # strict format
-                    errors="coerce"
-                )
-                df_temp["Segment"] = pd.to_numeric(df_temp["Trace_Segment_Num"], errors="coerce")
-                df_temp["Wt_Min_Slope"] = pd.to_numeric(df_temp["Wt_Min_Slope"], errors="coerce")
-
-                # Burrow code
-                df_temp["Burrow"] = df_temp["File"].astype(str).apply(clean_burrow)
-
-                all_dfs.append(df_temp)
-            except Exception as e:
-                print(f"Error reading {filename}: {e}")
-
-    if not all_dfs:
-        print("No matching files found.")
-        return pd.DataFrame(columns=['MOM_File', 'Segment', 'DateTime', 'Wt', 'Burrow'])
-
-    # Combine and drop duplicates
-    df_MOM = pd.concat(all_dfs, ignore_index=True).drop_duplicates()
-
-    # Rename columns for consistency
-    df_MOM.rename(columns={
-        'File': 'MOM_File',
-        'Trace_Segment_Num': 'Segment',
-        'Wt_Min_Slope': 'Wt'
-    }, inplace=True)
-
-    # Sort
-    df_MOM.sort_values(by=["DateTime"], inplace=True)
-
-    # --- Defensive cleanup ---
-    # Ensure index is unique and clean
-    df_MOM = df_MOM.reset_index(drop=True)
-
-    return df_MOM
-
-##########################
 #   function: load_all_MOM_files
 #       GUI Button Call: Calls get_All_MOM_data to get all MOM data in a folder
 #       Puts it in the global dataframe
@@ -491,49 +361,6 @@ def load_all_MOM_files():
     populate_mom_Windows(df_valid_mom[['Burrow', 'DateTime',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
 
     return df_valid_mom 
-
-
-##########################
-#   function: load_file - NOT USED at this time. Maybe be reinstated in the future
-#       Mac interface to open a single RFID file
-#       Once opened, put in dataframe and display
-#       For now, it builds global dataframe, but could return the dataframe instead - for later?
-########
-def load_file():
-    global dataframe
-    
-    file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv")])
-
-    if file_path:
-        try:
-            # filename = os.path.basename(file_path)
-            filename = return_useful_name(file_path)  # Get just the name of the file without path and extension
-            if filename.startswith('RF'):
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    if file_path.endswith('.csv') or file_path.endswith('.txt') or file_path.endswith('.TXT'):
-                        # Read CSV without assuming headers
-                        dataframe = pd.read_csv(file, delimiter=',', header=None, names=['PIT_ID', 'Rdr', 'PIT_DateTime'], 
-                                                on_bad_lines='warn')
-
-                        # Ensure 'PIT_DateTime' is converted to datetime if necessary
-                        if 'PIT_DateTime' in dataframe.columns:
-                            dataframe['PIT_DateTime'] = pd.to_datetime(dataframe['PIT_DateTime'], errors='coerce')
-                        else:
-                            raise ValueError("'PIT_DateTime' column not found in the dataframe.")
-
-                    else:
-                        raise ValueError("Unsupported file format. Please select a CSV or text file.")
-                    
-
-                    populate_RFID_Windows(dataframe, "RFID") # moved this code to this function 7/18/2024 - can use it with one file or many files
-
-                
-            else:
-                raise ValueError("Selected file does not start with 'RFID_'.")
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load file: {e}")
-
 
 
 ##########################
@@ -804,86 +631,6 @@ def resolve_missing_RFIDs(df_Missing_MOMs: pd.DataFrame,
 
 
 
-##########################
-#   function: build_final_combo_MOM_RFID - from notebook 1:45
-#       Links MOM and RFID files based on time stamps
-#       If MOM RTCs are bad, uses date and RFID date/time info to link them
-#       Returns a combined file
-##########################
-def build_final_combo_MOM_RFID_OLD(df_WtFiles: pd.DataFrame,
-                               df_rfid: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build final combined MOM + RFID dataframe:
-      1. Run join_MOM_RFID2 to get df_MOM_with_counts
-      2. Find missing-time MOM rows, filter with remove_spurious_pairs,
-         and resolve them with resolve_missing_RFIDs
-      3. Append resolved rows back to df_MOM_with_counts
-      4. Sort final DataFrame by MOM_File then MOM_Time
-      5. Enforce final schema/column order
-      6. Add Matched flag (True if RFID match found, False otherwise)
-    """
-
-    desired_cols = [
-        "Burrow", "MOM_File", "MOM_Time", "Segment", "Wt",
-        "RFID", "N", "Rdr", "Closest_RFID_Time", "RF_File", "Matched"
-    ]
-
-    # 1. Initial join
-    df_MOM_with_counts = join_MOM_RFID2(df_WtFiles, df_rfid, window="3min")
-    df_MOM_with_counts["Matched"] = False
-
-    # --- 🔑 Standardize naming ---
-    df_MOM_with_counts = df_MOM_with_counts.rename(
-        columns={
-            "Wt_Min_Slope": "Wt",
-            "RFID_Time": "Closest_RFID_Time",
-            "Segmnt": "Segment"
-        }
-    )
-
-    # 2. Identify missing-time rows
-    df_WtFiles = df_WtFiles.copy()
-    df_WtFiles["DateTime"] = pd.to_datetime(df_WtFiles["DateTime"], errors="coerce")
-    df_missing_time = df_WtFiles[
-        df_WtFiles["DateTime"] == pd.Timestamp("2000-01-01 00:00:00")
-    ].copy()
-
-    valid_missing = remove_spurious_pairs(
-        df_missing_time, "Wt_Min_Slope", low_val=50, high_val=75, tol=0.6
-    )
-
-    # 3. Resolve missing rows
-    df_r = resolve_missing_RFIDs(valid_missing, df_rfid)
-
-    if not df_r.empty:
-        df_r = df_r.rename(
-            columns={"Wt_Min_Slope": "Wt", "PIT_Time": "Closest_RFID_Time"}
-        )
-        df_r["Matched"] = df_r["RFID"].notna()
-    else:
-        df_r = pd.DataFrame(columns=desired_cols)
-
-    # --- 🔑 Ensure both dfs have same schema ---
-    df_MOM_with_counts = df_MOM_with_counts.reindex(columns=desired_cols)
-    df_r = df_r.reindex(columns=desired_cols)
-
-    # 4. Combine
-    final_combo = pd.concat([df_MOM_with_counts, df_r], ignore_index=True)
-
-    # 5. Sort by MOM_File then MOM_Time
-    final_combo = final_combo.sort_values(
-        by=["MOM_File", "MOM_Time"], ignore_index=True
-    )
-
-    # 6. Drop duplicates
-    final_combo = final_combo.drop_duplicates(
-        subset=["Burrow", "MOM_File", "Wt"],
-        keep="first",
-        ignore_index=True
-    )
-
-    return final_combo
-
 def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
                                df_rfid: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1097,27 +844,6 @@ def get_All_Mom_data(folder: str = None) -> pd.DataFrame:
 
 ##########################
 #   function: call_combo_RFID_MOM():
-#       call from GUI to do this - but. not used now
-#######
-def do_Join_MOM_RFID_Works():
-    df_rfid = get_All_RFID_data(vTesting_Folder)
-    df_WtFiles = get_All_Mom_data(vTesting_Folder)
-
-    df_WtFiles['DateTime'] = pd.to_datetime(df_WtFiles['DateTime'], errors="coerce")
-
-    df_WtFiles_clean = remove_spurious_pairs(df_WtFiles, "Wt_Min_Slope", low_val = 50, high_val = 75, tol  = 0.6) 
-    #########
-    #   This works. should work inside the app as is. Need to do above to get its parameters
-    #   in the app, those will be done via GUI
-    ####
-    df_finale= build_final_combo_MOM_RFID(df_WtFiles_clean, df_rfid)
-    df_finale = df_finale.sort_values(["Burrow"], kind="mergesort").reset_index(drop=True)
-    print(df_finale.head(30))
-    df_finale.to_csv("df_Final_Joined_GREAT.csv", index=False)
-
-
-##########################
-#   function: call_combo_RFID_MOM():
 #       call from GUI to do this
 #######
 def do_Join_MOM_RFID(folder: str = None):
@@ -1150,12 +876,25 @@ def do_Join_MOM_RFID(folder: str = None):
     # print(df_finale.head(30))
 
     if True:
-                    # Display the joined DataFrame in t3
-            join_widgetst1.delete('1.0', tk.END)  # Clear existing content
-            #join_widgetst1.insert(tk.END, df_finale.to_string(index=False))  # Insert joined DataFrame
+        # Display the joined DataFrame in t3
+        join_widgetst1.delete('1.0', tk.END)  # Clear existing content
+        #join_widgetst1.insert(tk.END, df_finale.to_string(index=False))  # Insert joined DataFrame
 
-            table_str = format_df_custom(df_finale, "JOIN")
-            join_widgetst1.insert(tk.END, table_str)
+        table_str = format_df_custom(df_finale, "JOIN")
+        join_widgetst1.insert(tk.END, table_str)
+
+        # show the rfid file and the MOM files
+        # rename for display because df_WtFiles_clean still uses Wt_Min_Slope
+        mom_display = df_WtFiles_clean.rename(columns={"Wt_Min_Slope": "Wt"}).copy()
+        mom_display["DateTime"] = pd.to_datetime(mom_display["DateTime"], errors="coerce")
+        mom_display = mom_display.sort_values(["Burrow", "DateTime"])
+        populate_mom_Windows(mom_display[['Burrow', 'DateTime', 'Wt']])
+
+        rfid_display = df_rfid.copy()
+        rfid_display["PIT_DateTime"] = pd.to_datetime(rfid_display["PIT_DateTime"], errors="coerce")
+        rfid_display = rfid_display.sort_values(["Burrow", "PIT_DateTime"])
+        populate_RFID_Windows(rfid_display[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
+
 
     if False:
         df_finale.to_csv("df_Final_Joined_GREAT.csv", index=False)
@@ -1179,55 +918,6 @@ def do_Join_MOM_RFID(folder: str = None):
             print("User chose not to save the DataFrame.")
 
 
-
-
-
-##########################
-#   function: insert_dataframe_into_widget
-#       One function to update windows with dataframe information
-#       Parameters:
-#           - dataframe (pd.DataFrame): The DataFrame containing data to be inserted.
-#           - widget (tk.Text): The tkinter Text widget to insert data into
-########
-def insert_dataframe_into_widget(dataframe, widget):
-
-    for index, row in dataframe.iterrows():
-        widget.insert(tk.END, f"{row['PIT_ID']}    {row['Rdr']}    {row['PIT_DateTime']}\n")
-
-##########################
-#   function: update_days_menu
-#       Gets list of unique days from the dataframe
-#       Builds a list of those days and puts them in a popup widget
-#       Handles the user choosing a day from the popup by calling show_records_by_day 
-########
-def update_days_menu(dataframe=None):
-    # global dataframe
-    
-    try:
-        
-        if dataframe.empty or 'PIT_DateTime' not in dataframe.columns:
-            print("DataFrame is empty or 'PIT_DateTime' column not found.")
-            return
-        
-        # Convert 'PIT_DateTime' to datetime if it's not already
-        if not pd.api.types.is_datetime64_any_dtype(dataframe['PIT_DateTime']):
-            dataframe['PIT_DateTime'] = pd.to_datetime(dataframe['PIT_DateTime'], errors='coerce')
-        
-        # Extract unique days from 'PIT_DateTime', handling NaT values
-        valid_dates = dataframe['PIT_DateTime'][pd.notnull(dataframe['PIT_DateTime'])].dt.date.unique()
-        # sort the dates
-        unique_days = sorted(valid_dates, reverse=True)
-        
-        # Clear existing menu items
-        days_menu.delete(0, tk.END)
-        
-        # Add days to the menu
-        for day in unique_days:
-            formatted_day = day.strftime('%m-%d-%Y')
-            days_menu.add_command(label=formatted_day, command=lambda d=day: show_records_by_day(d))
-        
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to update Days menu: {e}")
 
 
 
@@ -1502,56 +1192,6 @@ def create_output_frame_var(parent, prefix: str = "", n: int = 3,
         **{f"{prefix}{k}": v for k, v in scrollbars.items()},
     }
 
-##################################
-#   GUI functions
-#######
-
-##########################
-#   function: create_output_frame
-#    Create an output frame with 3 labeled sections and scrollable text boxes.
-#    prefix: optional string to prefix variable names (e.g., 'mom_')
-#    Returns a dictionary of widget references.
-########
-def create_output_frame(parent, prefix="", width=50, height=50):
-
-    frame = tk.Frame(parent, width=width, height=height, bd=1, relief=tk.SOLID)
-    frame.pack_propagate(False)  # Keep specified size
-
-    # Labels
-    labels = {}
-    labels["label_all_records"] = tk.Label(frame, text="All Records", font=("Arial", 12))
-    labels["label_all_records"].grid(row=0, column=0, padx=10, pady=(10, 5))
-
-    labels["one_day"] = tk.Label(frame, text="One day", font=("Arial", 12))
-    labels["one_day"].grid(row=0, column=1, padx=10, pady=(10, 5))
-
-    labels["bird_activity"] = tk.Label(frame, text="Bird Activity", font=("Arial", 12))
-    labels["bird_activity"].grid(row=0, column=2, padx=10, pady=(10, 5))
-
-    # Text areas
-    text_widgets = {}
-    scrollbars = {}
-    for i, key in enumerate(["t1", "t2", "t3"], start=0):
-        sub_frame = tk.Frame(frame, bd=1, relief=tk.SOLID)
-        sub_frame.grid(row=1, column=i, padx=10, pady=5, sticky=tk.NSEW)
-
-        scrollbar = Scrollbar(sub_frame, orient="vertical")
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        text_widget = tk.Text(sub_frame, width=width, height=height, yscrollcommand=scrollbar.set)
-        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.config(command=text_widget.yview)
-
-        text_widgets[key] = text_widget
-        scrollbars[f"{key}_scrollbar"] = scrollbar
-
-    return {
-        f"{prefix}frame": frame,
-        **{f"{prefix}{k}": v for k, v in labels.items()},
-        **{f"{prefix}{k}": v for k, v in text_widgets.items()},
-        **{f"{prefix}{k}": v for k, v in scrollbars.items()},
-    }
-
 ##########################
 #   function: assign_widget_refs
 #       Assign each widget in widget_dict to a variable with the same name as the key
@@ -1708,6 +1348,8 @@ else:
         height=50,                        # same height as others
         label_texts=["MOM Traces / RFID"]       # custom label
 )
+join_widgetsframe = join_widgets["join_widgetsframe"]
+join_widgetst1 = join_widgets["join_widgetst1"]  # explicit for linters    
 
 # Place join_container below the previous container
 # join_widgets["join_widgets_frame"].pack(side=tk.TOP, pady=(20, 0))
