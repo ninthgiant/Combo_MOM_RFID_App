@@ -36,7 +36,7 @@ vTesting_Folder = "BAD" # "/Users/bobmauck/devel/Combo_App/Example_Data"  # fold
 
 global vVersString
 global vAppName
-vVersString = " (v_01.1 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
+vVersString = " (v_01.2 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
 vAppName = "Combo Viewer" + vVersString
 if do_print:
     print(f"Starting {vVersString} - {vAppName}")
