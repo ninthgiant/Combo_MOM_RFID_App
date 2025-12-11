@@ -31,10 +31,19 @@ day_only_fmt = '%m-%d-%Y'
 
 global do_print
 do_print = True  # Set to True to enable print statements for debugging
+myTesting = False
+vTesting_Folder = "BAD" # "/Users/bobmauck/devel/Combo_App/Example_Data"  # folder for testing on Mauck computer
+
 global vVersString
 global vAppName
-vVersString = " (v_01 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
+vVersString = " (v_01.1 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
 vAppName = "Combo Viewer" + vVersString
+if do_print:
+    print(f"Starting {vVersString} - {vAppName}")
+########   Versions
+#       v_01.0 - initial working version
+#       v_01.1 - minor change: fixed bug that caused error on non-Mauck computers - file paths
+################
 
 ########################### 
 #   function: format_time_cols  
@@ -369,7 +378,7 @@ def get_All_MOM_only_data(folder: None | str = None) -> pd.DataFrame:
             print("No folder selected. Using default folder.")
             return pd.DataFrame(columns=['MOM_File', 'Segment', 'DateTime', 'Wt', 'Burrow'])
     else:
-        folder = "/Users/bobmauck/devel/Combo_App/Example_Data"
+        folder = vTesting_Folder
 
     cols_to_import = ['File', 'Trace_Segment_Num', 'DateTime', 'Wt_Min_Slope']
     all_dfs = []
@@ -526,8 +535,6 @@ def load_file():
 
 
 
-
-
 ##########################
 #   function: get_All_RFID_data - from Jup Notebook 1:40PM on 8/23/25
 #       Mac interface to open all RFID files in a folder - once used this folder: str = "/Users/bobmauck/devel/Combo_App/Example_Data"
@@ -537,9 +544,7 @@ def load_file():
 #       Assumes the files have NO header row and uses:
 #           ['PIT_ID', 'Rdr', 'PIT_DateTime'] as the column names.
 ########
-def get_All_RFID_data(
-    folder: str = "/Users/bobmauck/devel/Combo_App/Example_Data"
-) -> pd.DataFrame:
+def get_All_RFID_data(folder: str = None) -> pd.DataFrame:
     """
     Load all files in 'folder' that start with 'RF' and end with '.txt',
     combine them into a single DataFrame, remove duplicates, and return it.
@@ -547,6 +552,15 @@ def get_All_RFID_data(
         ['PIT_ID', 'Rdr', 'PIT_DateTime']
     as the column names.
     """
+    if folder == "DEBUG":
+        folder = vTesting_Folder
+    else:
+        messagebox.showwarning("Find Data", "Choose folder with RFID data.")
+        folder = filedialog.askdirectory()
+        if not folder:  # User cancelled the dialog
+            messagebox.showwarning("Find Data", "No Folder Selected")
+            return None
+
     cols_to_import = ['PIT_ID', 'Rdr', 'PIT_DateTime']
 
     # Debug info
@@ -603,25 +617,30 @@ def get_All_RFID_data(
 def load_all_RFID_files():
     # global all_rfid # use this to hold the dataframe for all RFID data for combo work?
     df_all_rfid = get_All_RFID_data()
-    df_all_rfid = format_time_cols(df_all_rfid, date_fmt, cols=['PIT_DateTime'])
-    # chg   
-    # df_all_rfid["Burrow"] = df_all_rfid["Burrow"].astype(str).apply(clean_burrow)
+    
+    if df_all_rfid.empty:
+        messagebox("No RFID folder chosen")
+        return None
+    else:
+        df_all_rfid = format_time_cols(df_all_rfid, date_fmt, cols=['PIT_DateTime'])
+        # chg   
+        # df_all_rfid["Burrow"] = df_all_rfid["Burrow"].astype(str).apply(clean_burrow)
 
-    # Ensure PIT_DateTime is actually datetime
-    df_all_rfid["PIT_DateTime"] = pd.to_datetime(df_all_rfid["PIT_DateTime"], errors="coerce")
+        # Ensure PIT_DateTime is actually datetime
+        df_all_rfid["PIT_DateTime"] = pd.to_datetime(df_all_rfid["PIT_DateTime"], errors="coerce")
 
-    # Drop rows where PIT_DateTime is missing (NaT)
-    df_all_rfid = df_all_rfid.dropna(subset=["PIT_DateTime"])
-     # Drop rows where burrow is not right 
-    df_all_rfid = df_all_rfid[df_all_rfid["Burrow"].astype(str).str.isdigit()].copy()
+        # Drop rows where PIT_DateTime is missing (NaT)
+        df_all_rfid = df_all_rfid.dropna(subset=["PIT_DateTime"])
+        # Drop rows where burrow is not right 
+        df_all_rfid = df_all_rfid[df_all_rfid["Burrow"].astype(str).str.isdigit()].copy()
 
-    # Sort by RFID_File then Time
-    df_all_rfid = df_all_rfid.sort_values(
-        by=["Burrow", "PIT_DateTime"], ignore_index=True
-    )
+        # Sort by RFID_File then Time
+        df_all_rfid = df_all_rfid.sort_values(
+            by=["Burrow", "PIT_DateTime"], ignore_index=True
+        )
 
-    populate_RFID_Windows(df_all_rfid[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
-    return df_all_rfid 
+        populate_RFID_Windows(df_all_rfid[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
+        return df_all_rfid 
 
 ##########################
 #   function: earliest_per_pit
@@ -1009,10 +1028,6 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
 ##########################
 #   function: get_All_Mom_data
 #       returns df with MOM data
-#######
-def get_All_Mom_data(
-    folder: str = "/Users/bobmauck/devel/Combo_App/Example_Data"
-) -> pd.DataFrame:
     """
     Load all files in 'folder' that start with 'Bird_Weight_' and end with '.txt' (case-insensitive),
     combine them into a single DataFrame, remove duplicates, and return it.
@@ -1021,10 +1036,22 @@ def get_All_Mom_data(
         'File' -> 'MOM_File'
         'Trace_Segment_Num' -> 'Segment'
     """
+#######
+def get_All_Mom_data(folder: str = None) -> pd.DataFrame:
+
     cols_to_import = ['File', 'Trace_Segment_Num', 'DateTime', 'Wt_Min_Slope']
 
     # Debug info
     # print(f"Looking in folder: {folder}")
+
+    if folder == "DEBUG":
+        folder = vTesting_Folder
+    else:
+        messagebox.showwarning("Find Data", "Choose folder with Mass-o-Matic data.")
+        folder = filedialog.askdirectory()
+        if not folder:  # User cancelled the dialog
+            messagebox.showwarning("Find Data", "No Folder Selected")
+
     try:
         files_in_folder = os.listdir(folder)
         # print("Files in folder:")
@@ -1069,11 +1096,11 @@ def get_All_Mom_data(
 
 ##########################
 #   function: call_combo_RFID_MOM():
-#       call from GUI to do this
+#       call from GUI to do this - but. not used now
 #######
 def do_Join_MOM_RFID_Works():
-    df_rfid = get_All_RFID_data("/Users/bobmauck/devel/Combo_App/Example_Data")
-    df_WtFiles = get_All_Mom_data("/Users/bobmauck/devel/Combo_App/Example_Data")
+    df_rfid = get_All_RFID_data(vTesting_Folder)
+    df_WtFiles = get_All_Mom_data(vTesting_Folder)
 
     df_WtFiles['DateTime'] = pd.to_datetime(df_WtFiles['DateTime'], errors="coerce")
 
@@ -1092,20 +1119,16 @@ def do_Join_MOM_RFID_Works():
 #   function: call_combo_RFID_MOM():
 #       call from GUI to do this
 #######
-def do_Join_MOM_RFID():
+def do_Join_MOM_RFID(folder: str = None):
 
 # global all_mom, all_rfid
 
-    if True:
+    if folder == "DEBUG":
         # debugging only
-        folder = "/Users/bobmauck/devel/Combo_App/Example_Data"
+        folder = vTesting_Folder
     else:
-        messagebox.showwarning("Find Data", "Choose folder with rfid and mom data.")
-        folder = filedialog.askdirectory()
+        folder = None
 
-        if not folder:  # User cancelled the dialog
-            messagebox.showwarning("Find Data", "No folder selected.")
-            return
 
     df_rfid = get_All_RFID_data(folder)
     df_WtFiles = get_All_Mom_data(folder)
@@ -1127,7 +1150,7 @@ def do_Join_MOM_RFID():
 
     if True:
                     # Display the joined DataFrame in t3
-            #join_widgetst1.delete('1.0', tk.END)  # Clear existing content
+            join_widgetst1.delete('1.0', tk.END)  # Clear existing content
             #join_widgetst1.insert(tk.END, df_finale.to_string(index=False))  # Insert joined DataFrame
 
             table_str = format_df_custom(df_finale, "JOIN")
@@ -1544,7 +1567,7 @@ def assign_widget_refs(widget_dict, namespace=None):
     for name, widget in widget_dict.items():
         namespace[name] = widget
         # Optional: print for verification
-        print(f"Assigned variable: {name} -> {widget}")
+        # print(f"Assigned variable: {name} -> {widget}")
 
 ##########################
 #   What do do when you quit the app
