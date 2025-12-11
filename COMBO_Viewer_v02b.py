@@ -30,13 +30,14 @@ date_fmt = '%m/%d/%Y %H:%M:%S'
 day_only_fmt = '%m-%d-%Y'
 
 global do_print
-do_print = True  # Set to True to enable print statements for debugging
+do_print = False  # Set to True to enable print statements for debugging
+Show_Buttons = False  # Toggle MOM button visibility to give more space to outputs
 myTesting = False
 vTesting_Folder = "BAD" # "/Users/bobmauck/devel/Combo_App/Example_Data"  # folder for testing on Mauck computer
 
 global vVersString
 global vAppName
-vVersString = " (v_01.2 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
+vVersString = " (v_02.0b)"  ## upDATE AS NEEDED - v01 Beta for testing
 vAppName = "Combo Viewer" + vVersString
 if do_print:
     print(f"Starting {vVersString} - {vAppName}")
@@ -44,6 +45,7 @@ if do_print:
 #       v_01.0 - initial working version
 #       v_01.1 - minor change: fixed bug that caused error on non-Mauck computers - file paths
 #       v_01.2b - added menus and setup.py for building Mac app with py2app
+#       v_02.0b - Cleaned up code, UI changes
 ################
 
 ########################### 
@@ -174,11 +176,12 @@ def populate_RFID_Windows(df_rfid):
     table_str = format_df_custom(df_rfid, mode="RFID")
     t1.insert(tk.END, table_str)
 
-
     # Update the label showing the number of records
-    record_count = len(df_rfid)
-    # label_all_records.config(text=f"All Records ({record_count})")
-    # widgets["label_all_records"].config(text=f"All Records ({record_count})")
+    try:
+        record_count = len(df_rfid)
+        label_1.config(text=f"RFIDs ({record_count} records)")
+    except Exception:
+        pass
 
 def format_df_custom(df, mode="MOM"):
     """
@@ -309,8 +312,11 @@ def populate_mom_Windows(df_mom):
         mom_t1.insert(tk.END, table_str)
 
     # Update the label showing the number of records
-    record_count = len(df_mom)
-    # mom_label_all_records.config(text=f"All Records ({record_count})")
+    try:
+        record_count = len(df_mom)
+        mom_label_1.config(text=f"Traces ({record_count} records)")
+    except Exception:
+        pass
 
 ##########################
 #   function: load_all_MOM_files
@@ -895,6 +901,22 @@ def do_Join_MOM_RFID(folder: str = None):
         rfid_display = rfid_display.sort_values(["Burrow", "PIT_DateTime"])
         populate_RFID_Windows(rfid_display[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
 
+        # Update label with summary counts
+        try:
+            df_counts = df_finale.copy()
+            df_counts["Wt"] = pd.to_numeric(df_counts.get("Wt"), errors="coerce")
+            total_rows = len(df_counts)
+            matched_rows = df_counts[
+                (df_counts["Wt"] > 0) &
+                df_counts["RFID"].fillna("").astype(str).ne("")
+            ]
+            matched_count = len(matched_rows)
+            join_widgetslabel_1.config(
+                text=f"MOM Traces / RFID ({total_rows} bird weights found, {matched_count} attached to RFID)"
+            )
+        except Exception:
+            pass
+
 
     if False:
         df_finale.to_csv("df_Final_Joined_GREAT.csv", index=False)
@@ -1239,84 +1261,82 @@ root.geometry(f"{window_width}x{window_height}")
 ##########################
 # Create a parent container for RFID + MOM buttons side-by-side
 ##########################
-buttons_side_by_side = tk.Frame(root)
-buttons_side_by_side.pack(side=tk.TOP, pady=(20, 0), fill=tk.X)
+if Show_Buttons:
+    buttons_side_by_side = tk.Frame(root)
+    buttons_side_by_side.pack(side=tk.TOP, pady=(20, 0), fill=tk.X)
 
-# Configure two equal-width columns so both containers match size
-buttons_side_by_side.grid_columnconfigure(0, weight=1, uniform="buttons")
-buttons_side_by_side.grid_columnconfigure(1, weight=1, uniform="buttons")
+    # Configure two equal-width columns so both containers match size
+    buttons_side_by_side.grid_columnconfigure(0, weight=1, uniform="buttons")
+    buttons_side_by_side.grid_columnconfigure(1, weight=1, uniform="buttons")
 
-##########################
-# RFID Button Container
-##########################
-buttons_rfid_container = tk.Frame(
-    buttons_side_by_side,
-    bd=0,
-    relief=tk.SOLID,
-)
-buttons_rfid_container.grid(row=0, column=0, padx=(0, 25), sticky="nsew")  # gap to MOM side
+    ##########################
+    # RFID Button Container
+    ##########################
+    buttons_rfid_container = tk.Frame(
+        buttons_side_by_side,
+        bd=0,
+        relief=tk.SOLID,
+    )
+    buttons_rfid_container.grid(row=0, column=0, padx=(0, 25), sticky="nsew")  # gap to MOM side
 
-frame_buttons_date = tk.Frame(buttons_rfid_container)
-frame_buttons_date.pack(side=tk.TOP, fill=tk.X, padx=20, pady=20)
+    frame_buttons_date = tk.Frame(buttons_rfid_container)
+    frame_buttons_date.pack(side=tk.TOP, fill=tk.X, padx=20, pady=20)
 
-# Buttons for RFID
-if False:
-    button_load_file = tk.Button(frame_buttons_date, text="Load File", command=load_file)
-    button_load_file.pack(side=tk.RIGHT)
-
-button_load_all_RFID = tk.Button(frame_buttons_date, text="Load RFID Files", command=load_all_RFID_files)
-button_load_all_RFID.pack(side=tk.RIGHT)
+    # Buttons for RFID
+    button_load_all_RFID = tk.Button(frame_buttons_date, text="Load RFID Files", command=load_all_RFID_files)
+    button_load_all_RFID.pack(side=tk.RIGHT)
 
 
 
-if False:
-    button_load_file = tk.Button(frame_buttons_date, text="Birds", command=update_Unique_Tags_menu)
-    button_load_file.pack(side=tk.RIGHT)
+    if False:
+        button_load_file = tk.Button(frame_buttons_date, text="Birds", command=update_Unique_Tags_menu)
+        button_load_file.pack(side=tk.RIGHT)
 
-    mb_days = tk.Menubutton(frame_buttons_date, text="Days", indicatoron=True, borderwidth=1, relief="raised")
-    mb_days.pack(side=tk.RIGHT, padx=10)
-    days_menu = tk.Menu(mb_days, tearoff=0)
-    mb_days.configure(menu=days_menu)
+        mb_days = tk.Menubutton(frame_buttons_date, text="Days", indicatoron=True, borderwidth=1, relief="raised")
+        mb_days.pack(side=tk.RIGHT, padx=10)
+        days_menu = tk.Menu(mb_days, tearoff=0)
+        mb_days.configure(menu=days_menu)
 
-    mb_pit = tk.Menubutton(frame_buttons_date, text="RFID", indicatoron=True, borderwidth=1, relief="raised")
-    mb_pit.pack(side=tk.RIGHT, padx=10)
-    pit_menu = tk.Menu(mb_pit, tearoff=0)
-    mb_pit.configure(menu=pit_menu)
+        mb_pit = tk.Menubutton(frame_buttons_date, text="RFID", indicatoron=True, borderwidth=1, relief="raised")
+        mb_pit.pack(side=tk.RIGHT, padx=10)
+        pit_menu = tk.Menu(mb_pit, tearoff=0)
+        mb_pit.configure(menu=pit_menu)
 
 ##########################
 # MOM Button Container
 ##########################
-buttons_mom_container = tk.Frame(
-    buttons_side_by_side,
-    bd=0
-)
-buttons_mom_container.grid(row=0, column=1, padx=(25, 0), sticky="nsew")  # gap to RFID side
+if Show_Buttons:
+    buttons_mom_container = tk.Frame(
+        buttons_side_by_side,
+        bd=0
+    )
+    buttons_mom_container.grid(row=0, column=1, padx=(25, 0), sticky="nsew")  # gap to RFID side
 
-mom_frame_buttons = tk.Frame(buttons_mom_container)
-mom_frame_buttons.pack(side=tk.TOP, fill=tk.X, padx=20, pady=20)
+    mom_frame_buttons = tk.Frame(buttons_mom_container)
+    mom_frame_buttons.pack(side=tk.TOP, fill=tk.X, padx=20, pady=20)
 
-# Buttons for MOM
-mom_button_load_all = tk.Button(mom_frame_buttons, text="Load MOM Files", command=load_all_MOM_files)
-mom_button_load_all.pack(side=tk.LEFT)
+    # Buttons for MOM
+    mom_button_load_all = tk.Button(mom_frame_buttons, text="Load MOM Files", command=load_all_MOM_files)
+    mom_button_load_all.pack(side=tk.LEFT)
 
-mom_button_load_file = tk.Button(mom_frame_buttons, text="Join RFID+MOM Data", command=do_Join_MOM_RFID   ) # make this one file only. debug
-mom_button_load_file.pack(side=tk.LEFT)
+    mom_button_load_file = tk.Button(mom_frame_buttons, text="Join RFID+MOM Data", command=do_Join_MOM_RFID   ) # make this one file only. debug
+    mom_button_load_file.pack(side=tk.LEFT)
 
 
 
-if False:
-    mom_button_birds = tk.Button(mom_frame_buttons, text="Birds", command=update_Unique_Tags_menu)
-    mom_button_birds.pack(side=tk.LEFT)
+    if False:
+        mom_button_birds = tk.Button(mom_frame_buttons, text="Birds", command=update_Unique_Tags_menu)
+        mom_button_birds.pack(side=tk.LEFT)
 
-    mom_mb_days = tk.Menubutton(mom_frame_buttons, text="Days", indicatoron=True, borderwidth=1, relief="raised")
-    mom_mb_days.pack(side=tk.LEFT, padx=10)
-    mom_days_menu = tk.Menu(mom_mb_days, tearoff=0)
-    mom_mb_days.configure(menu=mom_days_menu)
+        mom_mb_days = tk.Menubutton(mom_frame_buttons, text="Days", indicatoron=True, borderwidth=1, relief="raised")
+        mom_mb_days.pack(side=tk.LEFT, padx=10)
+        mom_days_menu = tk.Menu(mom_mb_days, tearoff=0)
+        mom_mb_days.configure(menu=mom_days_menu)
 
-    mom_mb_pit = tk.Menubutton(mom_frame_buttons, text="MOM RFID", indicatoron=True, borderwidth=1, relief="raised")
-    mom_mb_pit.pack(side=tk.LEFT, padx=10)
-    mom_pit_menu = tk.Menu(mom_mb_pit, tearoff=0)
-    mom_mb_pit.configure(menu=mom_pit_menu)
+        mom_mb_pit = tk.Menubutton(mom_frame_buttons, text="MOM RFID", indicatoron=True, borderwidth=1, relief="raised")
+        mom_mb_pit.pack(side=tk.LEFT, padx=10)
+        mom_pit_menu = tk.Menu(mom_mb_pit, tearoff=0)
+        mom_mb_pit.configure(menu=mom_pit_menu)
 
 
 ##########################
@@ -1366,7 +1386,8 @@ set_text_widget_font(join_widgets, font_name="Courier", font_size=16)
 assign_widget_refs(output_widgets)
 assign_widget_refs(mom_widgets)
 assign_widget_refs(join_widgets)
-print(join_widgets)
+if do_print:
+    print(join_widgets)
 
 # Keep output frames centered
 output_container.grid_columnconfigure(0, weight=1)
