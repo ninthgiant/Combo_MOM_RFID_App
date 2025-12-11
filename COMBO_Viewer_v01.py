@@ -33,8 +33,18 @@ global do_print
 do_print = True  # Set to True to enable print statements for debugging
 global vVersString
 global vAppName
-vVersString = " (v_01 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
+vVersString = " (v_01.1 Beta)"  ## upDATE AS NEEDED - v01 Beta for testing
 vAppName = "Combo Viewer" + vVersString
+
+myTesting = False
+vTesting_Folder = "BAD" # "/Users/bobmauck/devel/Combo_App/Example_Data"  # folder for testing on Mauck computer
+
+if do_print:
+    print(f"Starting {vVersString} - {vAppName}")
+########   Versions
+#       v_01.0 - initial working version
+#       v_01.1 - fixed bug that caused error on non-Mauck computers - file paths
+################
 
 ########################### 
 #   function: format_time_cols  
@@ -208,13 +218,12 @@ def load_one_MOM_file():
 #   function: get_All_MOM_data
 #       Loads all MOM files in a folder, cleans bad/gibberish values,
 #       enforces consistent DateTime parsing, and ensures a unique index.
+#
+#       Load all MOM data files in the given folder.
+#       Cleans bad/gibberish rows by coercing to NaT/NaN.
+#       Guarantees consistent datetime parsing and unique index.
 ########
 def get_All_MOM_data(folder: None | str = None) -> pd.DataFrame:
-    """
-    Load all MOM data files in the given folder.
-    Cleans bad/gibberish rows by coercing to NaT/NaN.
-    Guarantees consistent datetime parsing and unique index.
-    """
 
     if folder is None:
         folder = filedialog.askdirectory()
@@ -222,7 +231,7 @@ def get_All_MOM_data(folder: None | str = None) -> pd.DataFrame:
             print("No folder selected. Using default folder.")
             return pd.DataFrame(columns=['MOM_File', 'Segment', 'DateTime', 'Wt', 'Burrow'])
     else:
-        folder = "/Users/bobmauck/devel/Combo_App/Example_Data"
+        folder = vTesting_Folder # this should not happen. Don't need this
 
     cols_to_import = ['File', 'Trace_Segment_Num', 'DateTime', 'Wt_Min_Slope']
     all_dfs = []
@@ -419,9 +428,7 @@ def populate_mom_Windows(df_mom):
     record_count = len(df_mom)
     # mom_label_all_records.config(text=f"All Records ({record_count})")
 
-def get_All_RFID_data(
-    folder: str = "/Users/bobmauck/devel/Combo_App/Example_Data"
-) -> pd.DataFrame:
+def get_All_RFID_data(folder: str = None) -> pd.DataFrame:
     """
     Load all files in 'folder' that start with 'RF' and end with '.txt',
     combine them into a single DataFrame, remove duplicates, and return it.
@@ -495,7 +502,9 @@ def get_All_RFID_dataOLD(
         if not folder:  # User cancelled the dialog
             print("No folder selected. Using default folder.")
     else:
-        folder = "/Users/bobmauck/devel/Combo_App/Example_Data"
+        if do_print:
+            print("Using default Mauck folder for RFID data.")
+        folder = vTesting_Folder
     
     cols_to_import = ['PIT_ID', 'Rdr', 'PIT_DateTime']
 
@@ -881,13 +890,16 @@ def do_Join_MOM_RFID():
     if False:
         my_path = None
     else:
-        my_path = "/Users/bobmauck/devel/Combo_App/Example_Data"    # when you want to test
+        if do_print:
+            print("Using default Mauck folder for RFID data.")
+        my_path = vTesting_Folder    # when you want to test
 
-    # df_rfid = get_All_RFID_data(my_path) #("/Users/bobmauck/devel/Combo_App/Example_Data")
-    # df_WtFiles = get_All_Mom_data(my_path) # ("/Users/bobmauck/devel/Combo_App/Example_Data")
-
-    df_rfid = get_All_RFID_data("/Users/bobmauck/devel/Combo_App/Example_Data")
-    df_WtFiles = get_All_Mom_data("/Users/bobmauck/devel/Combo_App/Example_Data")
+    if True:
+        df_rfid = get_All_RFID_data(my_path) 
+        df_WtFiles = get_All_Mom_data(my_path) 
+    else:
+        df_rfid = get_All_RFID_data(vTesting_Folder)
+        df_WtFiles = get_All_Mom_data(vTesting_Folder)
 
     df_WtFiles['DateTime'] = pd.to_datetime(df_WtFiles['DateTime'], errors="coerce")
 
@@ -913,7 +925,7 @@ def do_Join_MOM_RFID_bad():
 
     if True:
         pass
-        thepath = "/Users/bobmauck/devel/Combo_App/Example_Data"
+        thepath = vTesting_Folder
     else:
         messagebox.showwarning("Find Data", "Choose folder with rfid data, then with mom data.")
     # get the RFID of interest, 
@@ -1466,7 +1478,8 @@ def assign_widget_refs(widget_dict, namespace=None):
     for name, widget in widget_dict.items():
         namespace[name] = widget
         # Optional: print for verification
-        print(f"Assigned variable: {name} -> {widget}")
+        # print(f"Assigned variable: {name} -> {widget}")
+
 
 ##########################
 #   What do do when you quit the app
