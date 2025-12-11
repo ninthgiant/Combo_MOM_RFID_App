@@ -43,6 +43,7 @@ if do_print:
 ########   Versions
 #       v_01.0 - initial working version
 #       v_01.1 - minor change: fixed bug that caused error on non-Mauck computers - file paths
+#       v_01.2b - added menus and setup.py for building Mac app with py2app
 ################
 
 ########################### 
@@ -1742,6 +1743,11 @@ root.config(menu=menubar)
 file_menu = tk.Menu(menubar, tearoff=False)
 menubar.add_cascade(label="File", menu=file_menu)
 file_menu.add_command(label="Quit", command=quit_app)
+
+# Process menu mirrors the Join RFID+MOM Data button
+process_menu = tk.Menu(menubar, tearoff=False)
+menubar.add_cascade(label="Process", menu=process_menu)
+process_menu.add_command(label="Join GPS/RFID", command=do_Join_MOM_RFID)
 
 ##########################
 # Start the app going wiht the mainloop
