@@ -1,11 +1,11 @@
 from setuptools import setup
 
-APP = ['COMBO_Viewer_v01b.py']
+APP = ['COMBO_Viewer_v02b.py']
 
 DATA_FILES = []
 
 OPTIONS = {
-    'argv_emulation': True,
+    'argv_emulation': False,
     'packages': ['pandas', 'numpy'],
     'includes': ['cmath', 'math'],   # ← FIX ADDED HERE
     'plist': {
