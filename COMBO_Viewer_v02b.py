@@ -1410,7 +1410,7 @@ file_menu.add_command(label="Quit", command=quit_app)
 # Process menu mirrors the Join RFID+MOM Data button
 process_menu = tk.Menu(menubar, tearoff=False)
 menubar.add_cascade(label="Process", menu=process_menu)
-process_menu.add_command(label="Join GPS/RFID", command=do_Join_MOM_RFID)
+process_menu.add_command(label="Join BSM/RFID", command=do_Join_MOM_RFID)
 
 ##########################
 # Start the app going wiht the mainloop
