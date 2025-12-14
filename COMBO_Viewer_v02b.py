@@ -29,11 +29,15 @@ date_fmt = '%m/%d/%Y %H:%M:%S'
 # universal day only format
 day_only_fmt = '%m-%d-%Y'
 
+# RFID tag ID length for use in validation of incoming data
+gExpected_PIT_ID_Len = 10
+
 global do_print
 do_print = False  # Set to True to enable print statements for debugging
 Show_Buttons = False  # Toggle MOM button visibility to give more space to outputs
-myTesting = False
-vTesting_Folder = "BAD" # "/Users/bobmauck/devel/Combo_App/Example_Data"  # folder for testing on Mauck computer
+myTesting = True
+# vTesting_Folder = "/Users/bobmauck/devel/Combo_App/Example_Data"  # folder for testing on Mauck computer
+vTesting_Folder = "/Users/bobmauck/Dropbox/BIG_Science/MOMs/Testing/Sam_Data"  # folder for testing from Sam's Google Drive data
 
 global vVersString
 global vAppName
@@ -168,6 +172,10 @@ def populate_RFID_Windows(df_rfid):
     if df_rfid.empty:
         messagebox.showwarning("Warning", "DataFrame is empty. Please load data first.")
         return
+    
+    # Sort by DateTime
+    df_rfid = df_rfid.sort_values(by="PIT_DateTime").reset_index(drop=True)
+
     # Clear existing content in t1, t2, and t3
     clear_text_widgets(output_widgets)
     
@@ -366,6 +374,10 @@ def load_all_MOM_files():
     print("populate_mom_Windows")
     populate_mom_Windows(df_valid_mom[['Burrow', 'DateTime',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
 
+    #### get a list of unique burrows
+    burrow_df = pd.DataFrame({"Burrow": sorted(df_valid_mom["Burrow"].dropna().unique())})
+    
+    # return df_valid_mom, burrow_df
     return df_valid_mom 
 
 
@@ -378,7 +390,7 @@ def load_all_MOM_files():
 #       Assumes the files have NO header row and uses:
 #           ['PIT_ID', 'Rdr', 'PIT_DateTime'] as the column names.
 ########
-def get_All_RFID_data(folder: str = None) -> pd.DataFrame:
+def get_All_RFID_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
     """
     Load all files in 'folder' that start with 'RF' and end with '.txt',
     combine them into a single DataFrame, remove duplicates, and return it.
@@ -386,7 +398,10 @@ def get_All_RFID_data(folder: str = None) -> pd.DataFrame:
         ['PIT_ID', 'Rdr', 'PIT_DateTime']
     as the column names.
     """
-    if folder == "DEBUG":
+
+    print("here is the folder chosen for RFID data:", folder)
+
+    if folder != None:
         folder = vTesting_Folder
     else:
         messagebox.showwarning("Find Data", "Choose folder with RFID data.")
@@ -416,6 +431,9 @@ def get_All_RFID_data(folder: str = None) -> pd.DataFrame:
         if filename.lower().startswith("rf") and filename.lower().endswith(".txt"):
             file_path = os.path.join(folder, filename)
             try:
+                OUT_FMT = "%m/%d/%Y %H:%M:%S" #output format for PIT_DateTime regardless of incoming format
+                EXPECTED_LEN = gExpected_PIT_ID_Len  # Lenght of a PIT_ID - make sure this doesn't change - or have a pref?
+
                 df_temp = pd.read_csv(
                     file_path,
                     delimiter=',',
@@ -424,10 +442,33 @@ def get_All_RFID_data(folder: str = None) -> pd.DataFrame:
                     usecols=[0, 1, 2],          # Only first 3 columns
                     on_bad_lines='warn'
                 )
+
                 # Add the filename column
                 df_temp['RF_File'] = filename
                 df_temp['Burrow'] = df_temp['RF_File'].astype(str).str[-7:-4]
                 df_temp["Burrow"] = df_temp["Burrow"].astype(str).apply(clean_burrow)
+
+                # Normalize types for string operations
+                df_temp["PIT_ID"] = df_temp["PIT_ID"].astype(str)
+                df_temp["Rdr"] = df_temp["Rdr"].astype(str)
+                df_temp["PIT_DateTime"] = df_temp["PIT_DateTime"].astype(str)
+
+                # Format PIT_DateTime to standard format
+                df_temp["PIT_DateTime"] = pd.to_datetime(
+                    df_temp["PIT_DateTime"],
+                    errors="coerce",  # handles both "06/14/2025 16:46:52" and "2025-07-26T14:00:00"
+                    format="mixed"
+                )
+                df_temp["PIT_DateTime"] = df_temp["PIT_DateTime"].dt.strftime(OUT_FMT).fillna("")
+
+                # remove rows with invalid PIT_ID length, etc.
+                df_temp = df_temp[
+                    ~df_temp["PIT_ID"].str.upper().isin({"STARTUP", "RUNNING"})
+                    & pd.to_numeric(df_temp["Rdr"], errors="coerce").notna()
+                    & df_temp["PIT_ID"].str.len().eq(EXPECTED_LEN)
+                ].copy()
+                # reset index after filtering
+                df_temp = df_temp.reset_index(drop=True)
                 
                 all_dfs.append(df_temp)
             except Exception as e:
@@ -439,6 +480,10 @@ def get_All_RFID_data(folder: str = None) -> pd.DataFrame:
 
     # Combine and drop duplicates
     df_RFID = pd.concat(all_dfs, ignore_index=True).drop_duplicates()
+
+    if one_Burr is not None:
+        target = str(one_Burr).zfill(3)
+        df_RFID = df_RFID[df_RFID["Burrow"] == target].copy()
 
     return df_RFID
 
@@ -537,8 +582,8 @@ def resolve_missing_RFIDs(df_Missing_MOMs: pd.DataFrame,
         my_Day_str = mom_file[3:13]
         focal_date = pd.to_datetime(my_Day_str, format="%m_%d_%Y", errors="coerce")
 
-        # time window: 20:00 same day → 07:00 next day
-        start = focal_date + pd.Timedelta(hours=20)
+        # time window: 20:00 same day → 07:00 next day - make a pref for this
+        start = focal_date + pd.Timedelta(hours=19)
         end   = focal_date + pd.Timedelta(days=1, hours=7)
         # if False:
         #     print("start and end time:")
@@ -552,8 +597,8 @@ def resolve_missing_RFIDs(df_Missing_MOMs: pd.DataFrame,
         # candidate RFID records
         rfid_temp = df_all_rfids[
             (df_all_rfids['Burrow'] == my_burr) &
-            (df_all_rfids['PIT_DateTime'] > start) &
-            (df_all_rfids['PIT_DateTime'] < end)
+            (df_all_rfids['PIT_DateTime'] >= start) &
+            (df_all_rfids['PIT_DateTime'] <= end)
         ].copy()
 
         # add column N = number of candidate RFID records
@@ -655,9 +700,16 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
         "RFID", "N", "Rdr", "Closest_RFID_Time", "RF_File", "Matched"
     ]
 
+    in_debug = True
+    if in_debug:
+        print(f"Number of rows before JoinRFID2: {len(df_WtFiles)}")
+
     # 1. Initial join
     df_MOM_with_counts = join_MOM_RFID2(df_WtFiles, df_rfid, window="3min")
     df_MOM_with_counts["Matched"] = False
+
+    if in_debug:
+        print(f"Number of rows after JoinRFID2: {len(df_MOM_with_counts)}")
 
     # --- 🔑 Standardize naming ---
     df_MOM_with_counts = df_MOM_with_counts.rename(
@@ -672,7 +724,7 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
     df_WtFiles = df_WtFiles.copy()
     df_WtFiles["DateTime"] = pd.to_datetime(df_WtFiles["DateTime"], errors="coerce")
 
-    if True:
+    if False:
         n_records_87Before = len(df_WtFiles[df_WtFiles["Burrow"] == "087"])
         print("Number of records with Burrow == '087':", n_records_87Before)
 
@@ -684,11 +736,11 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
     df_WtFiles = df_WtFiles[df_WtFiles["DateTime"] != pd.Timestamp("2000-01-01 00:00:00")].copy()
 
 
-    if True:
+    if False:
         n_records_87after = len(df_missing_time[df_missing_time["Burrow"] == "087"])
         print("Number of records '087' with missing time:", n_records_87after)
 
-    if True: 
+    if False: 
         print("df_missing_time #recs ", len(df_missing_time))
         # print(df_missing_time.head(10))
 
@@ -696,14 +748,17 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
         df_missing_time, "Wt_Min_Slope", low_val=50, high_val=75, tol=0.6
     )
 
-    if True:
+    if False:
         n_records_87after = len(df_missing_time[df_missing_time["Burrow"] == "087"])
         print("Number of records '087' after removing spurious:", n_records_87after)
 
     # 3. Resolve missing rows
     df_r = resolve_missing_RFIDs(valid_missing, df_rfid) #----- this is Correct - right number/and linked
 
-    if True:
+    if in_debug:
+        print(f"Number of rows after remove_spurious: {len(df_r)}")
+
+    if False:
         n_records_87after = len(df_r[df_r["Burrow"] == "087"])
         print("Number of records '087' after removing resolve_missing_RFIDS:", n_records_87after)
         records_087 = df_r[df_r["Burrow"] == "087"]
@@ -748,7 +803,7 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
         print("--- final combo")
         print(final_combo.head(30))
 
-    if True:
+    if False:
         n_records_87after = len(final_combo[final_combo["Burrow"] == "087"])
         print("Number of records '087' after in final COMBO: ", n_records_87after)
         records_087 = final_combo[final_combo["Burrow"] == "087"]
@@ -791,14 +846,14 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
         'Trace_Segment_Num' -> 'Segment'
     """
 #######
-def get_All_Mom_data(folder: str = None) -> pd.DataFrame:
+def get_All_Mom_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
 
     cols_to_import = ['File', 'Trace_Segment_Num', 'DateTime', 'Wt_Min_Slope']
 
     # Debug info
     # print(f"Looking in folder: {folder}")
 
-    if folder == "DEBUG":
+    if folder != None:
         folder = vTesting_Folder
     else:
         messagebox.showwarning("Find Data", "Choose folder with Mass-o-Matic data.")
@@ -843,8 +898,19 @@ def get_All_Mom_data(folder: str = None) -> pd.DataFrame:
     # Combine and drop duplicates
     df_MOM = pd.concat(all_dfs, ignore_index=True).drop_duplicates()
 
+    # DROP ANY ROWS WITH MISSING Wt_Min_Slope
+    df_MOM["Wt_Min_Slope"] = pd.to_numeric(df_MOM["Wt_Min_Slope"], errors="coerce")
+    df_MOM = df_MOM.dropna(subset=["Wt_Min_Slope"]).reset_index(drop=True)
+
+
     # Rename columns
     df_MOM.rename(columns={'File': 'MOM_File', 'Trace_Segment_Num': 'Segment'}, inplace=True)
+
+    # Optional filter by burrow
+    if one_Burr is not None:
+        target = str(one_Burr).zfill(3)
+        df_MOM = df_MOM[df_MOM["Burrow"] == target].reset_index(drop=True)
+
 
     return df_MOM
 
@@ -852,7 +918,7 @@ def get_All_Mom_data(folder: str = None) -> pd.DataFrame:
 #   function: call_combo_RFID_MOM():
 #       call from GUI to do this
 #######
-def do_Join_MOM_RFID(folder: str = None):
+def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
 
 # global all_mom, all_rfid
 
@@ -863,8 +929,8 @@ def do_Join_MOM_RFID(folder: str = None):
         folder = None
 
 
-    df_rfid = get_All_RFID_data(folder)
-    df_WtFiles = get_All_Mom_data(folder)
+    df_rfid = get_All_RFID_data(folder, one_Burr)
+    df_WtFiles = get_All_Mom_data(folder, one_Burr)
 
     if df_rfid.empty or df_WtFiles.empty:
         messagebox.showwarning("Warning", "Please load both MOM and RFID data before joining.")
@@ -939,7 +1005,12 @@ def do_Join_MOM_RFID(folder: str = None):
         else:
             print("User chose not to save the DataFrame.")
 
-
+def do_Join_One_Burrow():
+    val = simpledialog.askstring("Process One Burrow", "Enter burrow number (e.g., 7 or 007):")
+    if not val:
+        return None # user cancelled or blank
+    target = str(val).zfill(3)
+    do_Join_MOM_RFID("DEBUG", target)
 
 
 
@@ -948,7 +1019,7 @@ def do_Join_MOM_RFID(folder: str = None):
 #       Joins MOM data to nearest RFID data within a specified time window.
 #       - Uses a 3-minute window by default.
 #       - Tries to find RFID data shifted by -1 hour first; if no matches, tries without shift.
-#       - Keeps rows in hours <07:00 or >20:00 even if no matches found.
+#       - Keeps rows in hours <07:00 or >19:00 even if no matches found. NEED PREF FOR THIS?
 #       - Returns a DataFrame with columns sorted by Burrow and MOM_Time, including RFID, Rdr, and RFID_Time.
 ########
 def join_MOM_RFID2(
@@ -1051,7 +1122,7 @@ def join_MOM_RFID2(
 
     # Keep rows in target hours (even if N==0)
     valid_time = mom[mom_time_col].notna()
-    hours_mask = valid_time & ((mom[mom_time_col].dt.hour < 7) | (mom[mom_time_col].dt.hour > 20))
+    hours_mask = valid_time & ((mom[mom_time_col].dt.hour < 7) | (mom[mom_time_col].dt.hour > 19)) # need a preference for this?
     reduced = mom.loc[hours_mask].copy()
 
     # Attach per-row offset_used (aligned by index for safety)
@@ -1410,7 +1481,11 @@ file_menu.add_command(label="Quit", command=quit_app)
 # Process menu mirrors the Join RFID+MOM Data button
 process_menu = tk.Menu(menubar, tearoff=False)
 menubar.add_cascade(label="Process", menu=process_menu)
-process_menu.add_command(label="Join BSM/RFID", command=do_Join_MOM_RFID)
+# process_menu.add_command(label="Join BSM/RFID", command=do_Join_MOM_RFID)
+
+process_menu.add_command(label="Join GPS/RFID (Debug)", command=lambda: do_Join_MOM_RFID("DEBUG"))
+process_menu.add_command(label="Process One Burrow",command=do_Join_One_Burrow)
+
 
 ##########################
 # Start the app going wiht the mainloop
