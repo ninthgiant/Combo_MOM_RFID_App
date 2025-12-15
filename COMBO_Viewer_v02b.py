@@ -32,16 +32,23 @@ day_only_fmt = '%m-%d-%Y'
 # RFID tag ID length for use in validation of incoming data
 gExpected_PIT_ID_Len = 10
 
+# time tolerance for matching MOM to RFID in minutes - pd.to_timedelta will accept a number, but it interprets a bare number as nanoseconds unless you also pass unit
+gTimeTolerance = "70min"
+
+# variables for time periods when we are 100% sure birds show up at night - 
+gNightStartHour = 19  # 8 PM
+gNightEndHour = 7     # 6 AM
+
 global do_print
 do_print = False  # Set to True to enable print statements for debugging
 Show_Buttons = False  # Toggle MOM button visibility to give more space to outputs
-myTesting = True
+myTesting = False
 # vTesting_Folder = "/Users/bobmauck/devel/Combo_App/Example_Data"  # folder for testing on Mauck computer
 vTesting_Folder = "/Users/bobmauck/Dropbox/BIG_Science/MOMs/Testing/Sam_Data"  # folder for testing from Sam's Google Drive data
 
 global vVersString
 global vAppName
-vVersString = " (v_02.0b)"  ## upDATE AS NEEDED - v01 Beta for testing
+vVersString = " (v_02.1b)"  ## upDATE AS NEEDED - v01 Beta for testing
 vAppName = "Combo Viewer" + vVersString
 if do_print:
     print(f"Starting {vVersString} - {vAppName}")
@@ -50,6 +57,7 @@ if do_print:
 #       v_01.1 - minor change: fixed bug that caused error on non-Mauck computers - file paths
 #       v_01.2b - added menus and setup.py for building Mac app with py2app
 #       v_02.0b - Cleaned up code, UI changes
+#       v_02.1b - Added functions to changing the window for finding rFid, other changes
 ################
 
 ########################### 
@@ -174,7 +182,7 @@ def populate_RFID_Windows(df_rfid):
         return
     
     # Sort by DateTime
-    df_rfid = df_rfid.sort_values(by="PIT_DateTime").reset_index(drop=True)
+    df_rfid = df_rfid.sort_values(by=["Burrow", "PIT_DateTime"]).reset_index(drop=True)
 
     # Clear existing content in t1, t2, and t3
     clear_text_widgets(output_widgets)
@@ -401,7 +409,7 @@ def get_All_RFID_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
 
     print("here is the folder chosen for RFID data:", folder)
 
-    if folder != None:
+    if folder is not None:
         folder = vTesting_Folder
     else:
         messagebox.showwarning("Find Data", "Choose folder with RFID data.")
@@ -440,7 +448,10 @@ def get_All_RFID_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
                     header=None,                # No header in file
                     names=cols_to_import,       # Assign column names
                     usecols=[0, 1, 2],          # Only first 3 columns
-                    on_bad_lines='warn'
+                    on_bad_lines='warn',
+                    encoding="latin1",          # or "utf-16" if that file is UTF-16
+                    encoding_errors="replace",  # keep rows, substitute bad bytes
+
                 )
 
                 # Add the filename column
@@ -539,18 +550,23 @@ def load_all_RFID_files():
     """
 ######## 
 def earliest_per_pit(df: pd.DataFrame) -> pd.DataFrame:
-    
-    # make sure PIT_DateTime is datetime
     df = df.copy()
-    df['PIT_DateTime'] = pd.to_datetime(df['PIT_DateTime'], errors='coerce')
+    # Drop the all-zero PIT_ID rows if doing so leaves data
+    filtered = df[df["PIT_ID"] != "0000000000"].copy()
+    if not filtered.empty:
+        df = filtered
+
+    # make sure PIT_DateTime is datetime
+    df["PIT_DateTime"] = pd.to_datetime(df["PIT_DateTime"], errors="coerce")
 
     # sort by PIT_ID then datetime
-    df = df.sort_values(['PIT_ID', 'PIT_DateTime'])
+    df = df.sort_values(["PIT_ID", "PIT_DateTime"])
 
     # keep first row for each PIT_ID
-    earliest = df.groupby('PIT_ID', as_index=False).first()
+    earliest = df.groupby("PIT_ID", as_index=False).first()
 
     return earliest.reset_index(drop=True)
+
 
 ##########################
 #   function: resolve_missing_RFIDs
@@ -583,8 +599,8 @@ def resolve_missing_RFIDs(df_Missing_MOMs: pd.DataFrame,
         focal_date = pd.to_datetime(my_Day_str, format="%m_%d_%Y", errors="coerce")
 
         # time window: 20:00 same day → 07:00 next day - make a pref for this
-        start = focal_date + pd.Timedelta(hours=19)
-        end   = focal_date + pd.Timedelta(days=1, hours=7)
+        start = focal_date + pd.Timedelta(hours=gNightStartHour)
+        end   = focal_date + pd.Timedelta(days=1, hours=gNightEndHour)
         # if False:
         #     print("start and end time:")
         #     print(start)
@@ -705,8 +721,9 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
         print(f"Number of rows before JoinRFID2: {len(df_WtFiles)}")
 
     # 1. Initial join
-    df_MOM_with_counts = join_MOM_RFID2(df_WtFiles, df_rfid, window="3min")
-    df_MOM_with_counts["Matched"] = False
+    # df_MOM_with_counts = join_MOM_RFID2(df_WtFiles, df_rfid, window=gTimeTolerance)
+    df_MOM_with_counts = join_MOM_RFID_New(df_WtFiles, df_rfid, window=gTimeTolerance)
+    df_MOM_with_counts["Matched"] = True
 
     if in_debug:
         print(f"Number of rows after JoinRFID2: {len(df_MOM_with_counts)}")
@@ -731,6 +748,7 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
 
     df_missing_time = df_WtFiles[
         df_WtFiles["DateTime"] == pd.Timestamp("2000-01-01 00:00:00")].copy()
+        ## also catch NaT or Windows time null?
 
     #### --- CHANGE -- remove df_missing_time from df_WtFiles
     df_WtFiles = df_WtFiles[df_WtFiles["DateTime"] != pd.Timestamp("2000-01-01 00:00:00")].copy()
@@ -853,7 +871,7 @@ def get_All_Mom_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
     # Debug info
     # print(f"Looking in folder: {folder}")
 
-    if folder != None:
+    if folder is not None:
         folder = vTesting_Folder
     else:
         messagebox.showwarning("Find Data", "Choose folder with Mass-o-Matic data.")
@@ -922,7 +940,7 @@ def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
 
 # global all_mom, all_rfid
 
-    if folder == "DEBUG":
+    if myTesting:
         # debugging only
         folder = vTesting_Folder
     else:
@@ -1010,7 +1028,7 @@ def do_Join_One_Burrow():
     if not val:
         return None # user cancelled or blank
     target = str(val).zfill(3)
-    do_Join_MOM_RFID("DEBUG", target)
+    do_Join_MOM_RFID("DEBUG", target) ## change hre to DEBUG for testing folder
 
 
 
@@ -1025,7 +1043,7 @@ def do_Join_One_Burrow():
 def join_MOM_RFID2(
     df_MOM: pd.DataFrame,
     df_RFID: pd.DataFrame,
-    window: str = "3min",
+    window: str = gTimeTolerance,
     mom_time_col: str = "DateTime",
     rfid_time_col: str | None = None,
 ) -> pd.DataFrame:
@@ -1207,6 +1225,215 @@ def join_MOM_RFID2(
     out = format_time_cols(out, date_fmt, cols=['MOM_Time', 'RFID_Time'])
 
     # Sort by numeric Burrow when possible, then MOM_Time
+    out["Burrow_sort"] = pd.to_numeric(out["Burrow"], errors="coerce")
+    out = out.sort_values(["Burrow_sort", "MOM_Time"], kind="mergesort").drop(columns=["Burrow_sort"])
+
+    return out
+
+
+def join_MOM_RFID_New(
+    df_MOM: pd.DataFrame,
+    df_RFID: pd.DataFrame,
+    window: str = gTimeTolerance,
+    mom_time_col: str = "DateTime",
+    rfid_time_col: str | None = None,
+) -> pd.DataFrame:
+    """
+    Like join_MOM_RFID2, but considers RFID shifted -1h, 0h, and +1h.
+    """
+    tol = pd.to_timedelta(window)
+
+    # Pick RFID datetime column if not provided
+    if rfid_time_col is None:
+        if "PIT_DateTime" in df_RFID.columns:
+            rfid_time_col = "PIT_DateTime"
+        elif "DateTime" in df_RFID.columns:
+            rfid_time_col = "DateTime"
+        else:
+            raise KeyError("No RFID datetime column found (need 'PIT_DateTime' or 'DateTime').")
+
+    mom = df_MOM.copy()
+    rfid = df_RFID.copy()
+
+    # Ensure Burrow exists
+    if "Burrow" not in mom.columns or "Burrow" not in rfid.columns:
+        raise KeyError("Both df_MOM and df_RFID must contain a 'Burrow' column.")
+
+    # Canonicalize burrow (digits only, last 3, zero-padded)
+    def canon_burrow(s: pd.Series) -> pd.Series:
+        return (
+            s.astype(str)
+             .str.replace(r"\D", "", regex=True)
+             .str[-3:]
+             .str.zfill(3)
+        )
+
+    mom["_BurrowKey"]  = canon_burrow(mom["Burrow"])
+    rfid["_BurrowKey"] = canon_burrow(rfid["Burrow"])
+
+    # Parse datetimes
+    mom[mom_time_col]   = pd.to_datetime(mom[mom_time_col], errors="coerce")
+    rfid[rfid_time_col] = pd.to_datetime(rfid[rfid_time_col], errors="coerce")
+
+    # Build join times (shifted -1h, zero, +1h)
+    rfid["_join_time_shift"] = rfid[rfid_time_col] - pd.Timedelta(hours=1)
+    rfid["_join_time_zero"]  = rfid[rfid_time_col]
+    rfid["_join_time_plus"]  = rfid[rfid_time_col] + pd.Timedelta(hours=1)
+
+    # Valid RFID per mode
+    rfid_shift = rfid.dropna(subset=["_join_time_shift"])
+    rfid_zero  = rfid.dropna(subset=["_join_time_zero"])
+    rfid_plus  = rfid.dropna(subset=["_join_time_plus"])
+
+    # Count matches per MOM row (try shift, then zero, then plus)
+    N = np.zeros(len(mom), dtype=int)
+    used_offset = np.full(len(mom), -3600, dtype=int)  # -3600 (shift) by default; 0 for zero-shift; +3600 for plus
+
+    tol_ns = np.int64(tol.value)
+    mom_times_ns = mom[mom_time_col].to_numpy(dtype="datetime64[ns]")
+    mom_bkeys    = mom["_BurrowKey"].to_numpy()
+
+    def arr_map(df: pd.DataFrame, col: str) -> dict:
+        return {
+            k: g[col].sort_values().to_numpy(dtype="datetime64[ns]")
+            for k, g in df.groupby("_BurrowKey", sort=False)
+        }
+
+    arr_shift = arr_map(rfid_shift, "_join_time_shift")
+    arr_zero  = arr_map(rfid_zero,  "_join_time_zero")
+    arr_plus  = arr_map(rfid_plus,  "_join_time_plus")
+
+    def count_in(arr: np.ndarray, t_int: np.int64) -> int:
+        if arr.size == 0:
+            return 0
+        low  = (t_int - tol_ns).view("datetime64[ns]")
+        high = (t_int + tol_ns).view("datetime64[ns]")
+        L = np.searchsorted(arr, low,  side="left")
+        R = np.searchsorted(arr, high, side="right")
+        return R - L
+
+    for i, (t, bk) in enumerate(zip(mom_times_ns, mom_bkeys)):
+        if np.isnat(t) or not isinstance(bk, (str, np.str_)):
+            continue
+        t_int = t.astype("int64")
+
+        # Try shifted (-1h)
+        arr = arr_shift.get(bk)
+        c = count_in(arr, t_int) if arr is not None else 0
+        if c > 0:
+            N[i] = c
+            continue
+
+        # Try zero
+        arr0 = arr_zero.get(bk)
+        c0 = count_in(arr0, t_int) if arr0 is not None else 0
+        if c0 > 0:
+            N[i] = c0
+            used_offset[i] = 0
+            continue
+
+        # Try plus (+1h)
+        arrp = arr_plus.get(bk)
+        cp = count_in(arrp, t_int) if arrp is not None else 0
+        if cp > 0:
+            N[i] = cp
+            used_offset[i] = 3600
+
+    mom["n_Matches"] = N
+
+    # Keep rows in target hours (even if N==0)
+    valid_time = mom[mom_time_col].notna()
+    hours_mask = valid_time & ((mom[mom_time_col].dt.hour < 7) | (mom[mom_time_col].dt.hour > 19))
+    reduced = mom.loc[hours_mask].copy()
+
+    # Attach per-row offset_used (aligned by index for safety)
+    reduced["_offset_used"] = pd.Series(used_offset, index=mom.index).loc[reduced.index].values
+
+    pieces = []
+    for bk, mom_g in reduced.groupby("_BurrowKey", sort=False):
+
+        mom_shift = mom_g[mom_g["_offset_used"] == -3600].dropna(subset=[mom_time_col])
+        mom_zero  = mom_g[mom_g["_offset_used"] == 0].dropna(subset=[mom_time_col])
+        mom_plus  = mom_g[mom_g["_offset_used"] == 3600].dropna(subset=[mom_time_col])
+
+        r_shift_b = rfid_shift[rfid_shift["_BurrowKey"] == bk].sort_values("_join_time_shift", kind="mergesort")
+        r_zero_b  = rfid_zero [rfid_zero ["_BurrowKey"] == bk].sort_values("_join_time_zero",  kind="mergesort")
+        r_plus_b  = rfid_plus [rfid_plus ["_BurrowKey"] == bk].sort_values("_join_time_plus",  kind="mergesort")
+
+        merged_parts = []
+
+        if not mom_shift.empty and not r_shift_b.empty:
+            m1 = pd.merge_asof(
+                mom_shift.sort_values(mom_time_col, kind="mergesort"),
+                r_shift_b[["_join_time_shift", "PIT_ID", "Rdr", "RF_File", "_BurrowKey"]],
+                left_on=mom_time_col,
+                right_on="_join_time_shift",
+                by="_BurrowKey",
+                direction="nearest",
+                tolerance=tol,
+            )
+            m1["RFID_Time"] = m1["_join_time_shift"]
+            merged_parts.append(m1)
+
+        if not mom_zero.empty and not r_zero_b.empty:
+            m2 = pd.merge_asof(
+                mom_zero.sort_values(mom_time_col, kind="mergesort"),
+                r_zero_b[["_join_time_zero", "PIT_ID", "Rdr", "RF_File", "_BurrowKey"]],
+                left_on=mom_time_col,
+                right_on="_join_time_zero",
+                by="_BurrowKey",
+                direction="nearest",
+                tolerance=tol,
+            )
+            m2["RFID_Time"] = m2["_join_time_zero"]
+            merged_parts.append(m2)
+
+        if not mom_plus.empty and not r_plus_b.empty:
+            m3 = pd.merge_asof(
+                mom_plus.sort_values(mom_time_col, kind="mergesort"),
+                r_plus_b[["_join_time_plus", "PIT_ID", "Rdr", "RF_File", "_BurrowKey"]],
+                left_on=mom_time_col,
+                right_on="_join_time_plus",
+                by="_BurrowKey",
+                direction="nearest",
+                tolerance=tol,
+            )
+            m3["RFID_Time"] = m3["_join_time_plus"]
+            merged_parts.append(m3)
+
+        if merged_parts:
+            merged_g = pd.concat(merged_parts, ignore_index=False).sort_index(kind="mergesort")
+        else:
+            merged_g = mom_g.copy()
+            merged_g["PIT_ID"] = pd.NA
+            merged_g["Rdr"] = pd.NA
+            merged_g["RF_File"] = pd.NA
+            merged_g["RFID_Time"] = pd.NaT
+
+        merged_g["RFID"] = merged_g["PIT_ID"]
+        pieces.append(merged_g)
+
+    out = pd.concat(pieces, ignore_index=False).sort_index(kind="mergesort")
+
+    rename_map = {}
+    if "Trace_Segment_Num" in out.columns:
+        rename_map["Trace_Segment_Num"] = "Segmnt"
+    if "Wt_Min_Slope" in out.columns:
+        rename_map["Wt_Min_Slope"] = "Wt"
+    if "n_Matches" in out.columns:
+        rename_map["n_Matches"] = "N"
+    if "DateTime" in out.columns:
+        rename_map["DateTime"] = "MOM_Time"
+    out = out.rename(columns=rename_map)
+
+    out = out.drop(columns=["_join_time_shift", "_join_time_zero", "_join_time_plus", "PIT_ID"], errors="ignore")
+
+    desired_order = ["Burrow", "MOM_File", "MOM_Time", "Segmnt", "Wt", "RFID", "N", "Rdr", "RFID_Time", "RF_File"]
+    out = out[[c for c in desired_order if c in out.columns]]
+
+    out["Burrow"] = out["Burrow"].astype(str).apply(clean_burrow)
+    out = format_time_cols(out, date_fmt, cols=['MOM_Time', 'RFID_Time'])
+
     out["Burrow_sort"] = pd.to_numeric(out["Burrow"], errors="coerce")
     out = out.sort_values(["Burrow_sort", "MOM_Time"], kind="mergesort").drop(columns=["Burrow_sort"])
 
