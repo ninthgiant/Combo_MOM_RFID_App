@@ -957,13 +957,22 @@ def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
     # make sure the column is actual datte/time format
     df_WtFiles['DateTime'] = pd.to_datetime(df_WtFiles['DateTime'], errors="coerce")
 
+    if myTesting:
+        print("df_WtFiles")
+        print(df_WtFiles.head(5))
+    
     # be sure we don't have any calibration data to combine
     df_WtFiles_clean = remove_spurious_pairs(df_WtFiles, "Wt_Min_Slope", low_val = 50, high_val = 75, tol  = 0.6) 
 
     # now link them
     df_finale= build_final_combo_MOM_RFID(df_WtFiles_clean, df_rfid)
+
+    if myTesting:
+        print("df_finale")
+        print(df_finale.head(5))
+
     df_finale = df_finale.sort_values(["Burrow"], kind="mergesort").reset_index(drop=True)
-    # print(df_finale.head(30))
+    df_finale = df_finale.sort_values(["Burrow", "MOM_Time"], kind="mergesort").reset_index(drop=True)
 
     if True:
         # Display the joined DataFrame in t3
