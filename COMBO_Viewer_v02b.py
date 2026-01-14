@@ -15,6 +15,7 @@ from tkinter import messagebox, filedialog, Menu, simpledialog, Scrollbar
 import pandas as pd
 import numpy as np
 import os  # Import the os module for file operations
+import csv  # For CSV quoting options
 
 ##########################
 #   Define globally available variables
@@ -42,13 +43,13 @@ gNightEndHour = 7     # 6 AM
 global do_print
 do_print = False  # Set to True to enable print statements for debugging
 Show_Buttons = False  # Toggle MOM button visibility to give more space to outputs
-myTesting = False
+myTesting = False # toggle for using known data locations, etc
 # vTesting_Folder = "/Users/bobmauck/devel/Combo_App/Example_Data"  # folder for testing on Mauck computer
 vTesting_Folder = "/Users/bobmauck/Dropbox/BIG_Science/MOMs/Testing/Sam_Data"  # folder for testing from Sam's Google Drive data
 
 global vVersString
 global vAppName
-vVersString = " (v_02.1b)"  ## upDATE AS NEEDED - v01 Beta for testing
+vVersString = " (v_02.3b)"  ## upDATE AS NEEDED - "b" Beta for testing
 vAppName = "Combo Viewer" + vVersString
 if do_print:
     print(f"Starting {vVersString} - {vAppName}")
@@ -58,6 +59,8 @@ if do_print:
 #       v_01.2b - added menus and setup.py for building Mac app with py2app
 #       v_02.0b - Cleaned up code, UI changes
 #       v_02.1b - Added functions to changing the window for finding rFid, other changes
+#       v_02.2b - Changed output preserve DateTime format - don't use space delimiter in Excel import
+#       v_02.3b - Now removes duplicates that are very close in time before matching MOM to RFID
 ################
 
 ########################### 
@@ -104,6 +107,60 @@ def remove_spurious_pairs(
     drop_idx = drop_idx.union(df.index[df[col] > high_val])
 
     return df.drop(drop_idx).reset_index(drop=True)
+
+
+def resolve_close_duplicates(df: pd.DataFrame, min_diff: float = 1.0) -> pd.DataFrame:
+    """
+    For duplicate DateTime rows:
+    - If max(Wt)-min(Wt) < min_diff → keep a single row using the max-Wt row but with Wt = average of duplicates.
+    - If the span >= min_diff:
+        * If 3+ values, average the middle values (exclude min/max).
+        * If only 2 values, keep the max value.
+    Non-duplicate DateTime rows are kept as-is.
+    """
+
+    if myTesting:
+        print("resolve_close_duplicates called")    
+        print(df.head(5))
+
+    if "DateTime" not in df.columns or "Wt_Min_Slope" not in df.columns:
+        raise KeyError("resolve_close_duplicates needs 'DateTime' and 'Wt' columns.")
+
+    df_clean = df.copy()
+    df_clean["Wt_Min_Slope"] = pd.to_numeric(df_clean["Wt_Min_Slope"], errors="coerce")
+
+    singles = df_clean[df_clean.duplicated(subset=["DateTime"], keep=False) == False]
+    dupes = df_clean[df_clean.duplicated(subset=["DateTime"], keep=False)]
+
+    resolved_rows = []
+    for dt, grp in dupes.groupby("DateTime"):
+        w = grp["Wt_Min_Slope"].dropna()
+        if w.empty:
+            # If all Wt are NaN, just keep the first row
+            resolved_rows.append(grp.iloc[0].copy())
+            continue
+
+        w_max = w.max()
+        w_min = w.min()
+        span = w_max - w_min
+
+        if span < min_diff:
+            new_wt = w.mean()
+        else:
+            if len(w) >= 3:
+                middle = w.sort_values().iloc[1:-1]
+                new_wt = middle.mean() if not middle.empty else w_max
+            else:
+                new_wt = w_max
+
+        # Take the row with the highest Wt as the base
+        row = grp.loc[w.idxmax()].copy()
+        row["Wt_Min_Slope"] = new_wt
+        row["MOM_File"] = str(row["MOM_File"]) + "*"
+        resolved_rows.append(row)
+
+    out = pd.concat([singles, pd.DataFrame(resolved_rows)], ignore_index=True)
+    return out.reset_index(drop=True)
 
 
 #############
@@ -353,8 +410,6 @@ def load_all_MOM_files():
     df_all_mom = df_all_mom.drop_duplicates().reset_index(drop=True)
 
     df_MOM = df_all_mom.copy()
-
-
 
     # Rename columns for consistency
     df_MOM.rename(columns={
@@ -964,6 +1019,9 @@ def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
     # be sure we don't have any calibration data to combine
     df_WtFiles_clean = remove_spurious_pairs(df_WtFiles, "Wt_Min_Slope", low_val = 50, high_val = 75, tol  = 0.6) 
 
+    # find multiple entries for same burrow very close in time - keep only one of them
+    df_WtFiles_clean = resolve_close_duplicates(df_WtFiles_clean)
+
     # now link them
     df_finale= build_final_combo_MOM_RFID(df_WtFiles_clean, df_rfid)
 
@@ -1025,7 +1083,15 @@ def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
 
             if output_file_path:
                 # Save df to file (tab-delimited, include headers)
-                df_finale.to_csv(output_file_path, index=False, sep="\t")
+                df_to_save = df_finale.copy()
+                
+                df_to_save.to_csv(
+                    output_file_path,
+                    index=False,
+                    sep="\t",
+                    date_format="%m/%d/%Y %H:%M:%S",  # keeps the full timestamp string
+                    quoting=csv.QUOTE_MINIMAL,        # default quoting; Excel can parse dates
+                )
                 print(f"Data saved to {output_file_path}")
             else:
                 print("Save cancelled.")
@@ -1719,7 +1785,7 @@ process_menu = tk.Menu(menubar, tearoff=False)
 menubar.add_cascade(label="Process", menu=process_menu)
 # process_menu.add_command(label="Join BSM/RFID", command=do_Join_MOM_RFID)
 
-process_menu.add_command(label="Join GPS/RFID (Debug)", command=lambda: do_Join_MOM_RFID("DEBUG"))
+process_menu.add_command(label="Join GPS/RFID", command=lambda: do_Join_MOM_RFID("DEBUG"))
 process_menu.add_command(label="Process One Burrow",command=do_Join_One_Burrow)
 
 
