@@ -225,6 +225,26 @@ def set_text_widget_font(output_frame_dict, font_name="Arial", font_size=14):
             widget.config(font=(font_name, font_size))
 
 
+def split_table_for_fixed_header(table_str: str) -> tuple[str, str]:
+    lines = table_str.splitlines()
+    if len(lines) <= 2:
+        return table_str, ""
+    return "\n".join(lines[:2]), "\n".join(lines[2:])
+
+
+def set_table_with_fixed_header(body_widget: tk.Text, header_widget: tk.Text | None, table_str: str):
+    header_text, body_text = split_table_for_fixed_header(table_str)
+
+    if header_widget is not None:
+        header_widget.config(state=tk.NORMAL)
+        header_widget.delete("1.0", tk.END)
+        header_widget.insert(tk.END, header_text)
+        header_widget.config(state=tk.DISABLED)
+
+    body_widget.delete("1.0", tk.END)
+    body_widget.insert(tk.END, body_text)
+
+
 ##########################
 #   function: populate_RFID_Windows
 #       Takes a dataframe and puts it in the t1 window
@@ -247,7 +267,7 @@ def populate_RFID_Windows(df_rfid):
     # Insert the entire dataframe into t1
     # t1.insert(tk.END, df_rfid.to_string(index=False))
     table_str = format_df_custom(df_rfid, mode="RFID")
-    t1.insert(tk.END, table_str)
+    set_table_with_fixed_header(t1, output_widgets.get("t1_header"), table_str)
 
     # Update the label showing the number of records
     try:
@@ -385,7 +405,7 @@ def populate_mom_Windows(df_mom):
         # Insert the entire dataframe into t1
          # Format dataframe with custom spacing/justification
         table_str = format_df_custom(df_mom, "MOM")
-        mom_t1.insert(tk.END, table_str)
+        set_table_with_fixed_header(mom_t1, mom_widgets.get("mom_t1_header"), table_str)
 
     # Update the label showing the number of records
     try:
@@ -1049,11 +1069,8 @@ def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
 
     if True:
         # Display the joined DataFrame in t3
-        join_widgetst1.delete('1.0', tk.END)  # Clear existing content
-        #join_widgetst1.insert(tk.END, df_finale.to_string(index=False))  # Insert joined DataFrame
-
         table_str = format_df_custom(df_finale, "JOIN")
-        join_widgetst1.insert(tk.END, table_str)
+        set_table_with_fixed_header(join_widgetst1, join_widgets.get("join_widgetst1_header"), table_str)
 
         # show the rfid file and the MOM files
         # rename for display because df_WtFiles_clean still uses Wt_Min_Slope
@@ -1563,6 +1580,7 @@ def create_output_frame_var(parent, prefix: str = "", n: int = 3,
 
     labels: dict[str, tk.Label] = {}
     text_widgets: dict[str, tk.Text] = {}
+    header_widgets: dict[str, tk.Text] = {}
     scrollbars: dict[str, tk.Scrollbar] = {}
 
     # Header labels + columns
@@ -1576,15 +1594,23 @@ def create_output_frame_var(parent, prefix: str = "", n: int = 3,
         sub = tk.Frame(frame, bd=1, relief=tk.SOLID)
         sub.grid(row=1, column=col, padx=10, pady=5, sticky=tk.NSEW)
 
-        # Scrollbar + Text
-        sb = Scrollbar(sub, orient="vertical")
+        t_key = f"t{col+1}"
+        h_key = f"{t_key}_header"
+        hdr = tk.Text(sub, width=width, height=2, wrap="none", state=tk.DISABLED)
+        hdr.pack(side=tk.TOP, fill=tk.X)
+
+        # Scrollable body
+        body_container = tk.Frame(sub)
+        body_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        sb = Scrollbar(body_container, orient="vertical")
         sb.pack(side=tk.RIGHT, fill=tk.Y)
 
-        t_key = f"t{col+1}"
-        txt = tk.Text(sub, width=width, height=height, yscrollcommand=sb.set, wrap="none")
+        txt = tk.Text(body_container, width=width, height=height, yscrollcommand=sb.set, wrap="none")
         txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb.config(command=txt.yview)
 
+        header_widgets[h_key] = hdr
         text_widgets[t_key] = txt
         scrollbars[f"{t_key}_scrollbar"] = sb
 
@@ -1597,6 +1623,7 @@ def create_output_frame_var(parent, prefix: str = "", n: int = 3,
     return {
         f"{prefix}frame": frame,
         **{f"{prefix}{k}": v for k, v in labels.items()},
+        **{f"{prefix}{k}": v for k, v in header_widgets.items()},
         **{f"{prefix}{k}": v for k, v in text_widgets.items()},
         **{f"{prefix}{k}": v for k, v in scrollbars.items()},
     }
@@ -1740,7 +1767,7 @@ if Show_Buttons:
 #   Create the output frames 
 # ####
 output_container = tk.Frame(root)
-output_container.pack(side=tk.TOP, pady=(20, 10), padx=10, fill=tk.BOTH, expand=True)
+output_container.pack(side=tk.TOP, pady=(24, 16), padx=18, fill=tk.BOTH, expand=True)
 
 # Keep left panes the same width; let heights and combined pane adapt to the window.
 side_rows = max(18, min(42, int((window_height - 220) / 22)))
@@ -1774,18 +1801,18 @@ join_widgetst1 = join_widgets["join_widgetst1"]  # explicit for linters
 
 if wide_layout:
     # Wide screen: RFID + Traces on left, combined output on the right.
-    output_widgets["frame"].grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
-    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 10), pady=0, sticky="nsew")
-    join_widgets["join_widgetsframe"].grid(row=0, column=2, padx=(0, 0), pady=0, sticky="nsew")
+    output_widgets["frame"].grid(row=0, column=0, padx=(0, 14), pady=(6, 6), sticky="nsew")
+    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 14), pady=(6, 6), sticky="nsew")
+    join_widgets["join_widgetsframe"].grid(row=0, column=2, padx=(0, 6), pady=(6, 6), sticky="nsew")
     output_container.grid_columnconfigure(0, weight=0)
     output_container.grid_columnconfigure(1, weight=0)
     output_container.grid_columnconfigure(2, weight=1)
     output_container.grid_rowconfigure(0, weight=1)
 else:
     # Narrow screen: keep RFID and Traces on top, combined output below.
-    output_widgets["frame"].grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
-    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 0), pady=0, sticky="nsew")
-    join_widgets["join_widgetsframe"].grid(row=1, column=0, columnspan=2, padx=(0, 0), pady=(12, 0), sticky="nsew")
+    output_widgets["frame"].grid(row=0, column=0, padx=(0, 12), pady=(6, 6), sticky="nsew")
+    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 6), pady=(6, 6), sticky="nsew")
+    join_widgets["join_widgetsframe"].grid(row=1, column=0, columnspan=2, padx=(0, 6), pady=(14, 6), sticky="nsew")
     output_container.grid_columnconfigure(0, weight=1)
     output_container.grid_columnconfigure(1, weight=1)
     output_container.grid_rowconfigure(0, weight=1)
