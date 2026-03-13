@@ -49,7 +49,7 @@ vTesting_Folder = "/Users/bobmauck/Dropbox/BIG_Science/MOMs/Testing/Sam_Data"  #
 
 global vVersString
 global vAppName
-vVersString = " (v_02.3b)"  ## upDATE AS NEEDED - "b" Beta for testing
+vVersString = " (v_02.4b)"  ## upDATE AS NEEDED - .4 makes one Burr more efficient
 vAppName = "Combo Viewer" + vVersString
 if do_print:
     print(f"Starting {vVersString} - {vAppName}")
@@ -267,6 +267,8 @@ def format_df_custom(df, mode="MOM"):
         Closest_RFID_Time, RF_File
     """
 
+    header_labels = {}
+
     if mode == "MOM":
         widths = {"Burrow": 10, "DateTime": 25, "Wt": 10}
         aligns = {"Burrow": "^", "DateTime": "^", "Wt": ">"}
@@ -276,6 +278,7 @@ def format_df_custom(df, mode="MOM"):
         widths = {"Burrow": 8, "PIT_DateTime": 20, "Rdr": 6, "PIT_ID": 12}
         aligns = {"Burrow": "^", "PIT_DateTime": "^", "Rdr": "^", "PIT_ID": ">"}
         cols = ["Burrow", "PIT_DateTime", "Rdr", "PIT_ID"]
+        header_labels = {"PIT_DateTime": "RFID_DateTime", "PIT_ID": "RFID"}
 
     elif mode == "JOIN":
         widths = {
@@ -313,7 +316,7 @@ def format_df_custom(df, mode="MOM"):
 
     # Build header
     header = " ".join(
-        f"{col:{aligns.get(col, '<')}{widths.get(col, 12)}}" for col in cols
+        f"{header_labels.get(col, col):{aligns.get(col, '<')}{widths.get(col, 12)}}" for col in cols
     )
     lines = [header, "-" * len(header)]
 
@@ -489,56 +492,68 @@ def get_All_RFID_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
 
     all_dfs = []
 
+    # Optional file-level filter for a single burrow.
+    target = str(one_Burr).zfill(3) if one_Burr is not None else None
+
     # Loop through matching files
     for filename in files_in_folder:
-        if filename.lower().startswith("rf") and filename.lower().endswith(".txt"):
-            file_path = os.path.join(folder, filename)
-            try:
-                OUT_FMT = "%m/%d/%Y %H:%M:%S" #output format for PIT_DateTime regardless of incoming format
-                EXPECTED_LEN = gExpected_PIT_ID_Len  # Lenght of a PIT_ID - make sure this doesn't change - or have a pref?
+        name_l = filename.lower()
+        if not (name_l.startswith("rf") and name_l.endswith(".txt")):
+            continue
 
-                df_temp = pd.read_csv(
-                    file_path,
-                    delimiter=',',
-                    header=None,                # No header in file
-                    names=cols_to_import,       # Assign column names
-                    usecols=[0, 1, 2],          # Only first 3 columns
-                    on_bad_lines='warn',
-                    encoding="latin1",          # or "utf-16" if that file is UTF-16
-                    encoding_errors="replace",  # keep rows, substitute bad bytes
+        # If a burrow is requested, only read files ending in _<burrow> before .txt.
+        if target is not None:
+            stem = os.path.splitext(filename)[0]
+            if not stem.endswith(f"_{target}"):
+                continue
 
-                )
+        file_path = os.path.join(folder, filename)
+        try:
+            OUT_FMT = "%m/%d/%Y %H:%M:%S" #output format for PIT_DateTime regardless of incoming format
+            EXPECTED_LEN = gExpected_PIT_ID_Len  # Lenght of a PIT_ID - make sure this doesn't change - or have a pref?
 
-                # Add the filename column
-                df_temp['RF_File'] = filename
-                df_temp['Burrow'] = df_temp['RF_File'].astype(str).str[-7:-4]
-                df_temp["Burrow"] = df_temp["Burrow"].astype(str).apply(clean_burrow)
+            df_temp = pd.read_csv(
+                file_path,
+                delimiter=',',
+                header=None,                # No header in file
+                names=cols_to_import,       # Assign column names
+                usecols=[0, 1, 2],          # Only first 3 columns
+                on_bad_lines='warn',
+                encoding="latin1",          # or "utf-16" if that file is UTF-16
+                encoding_errors="replace",  # keep rows, substitute bad bytes
 
-                # Normalize types for string operations
-                df_temp["PIT_ID"] = df_temp["PIT_ID"].astype(str)
-                df_temp["Rdr"] = df_temp["Rdr"].astype(str)
-                df_temp["PIT_DateTime"] = df_temp["PIT_DateTime"].astype(str)
+            )
 
-                # Format PIT_DateTime to standard format
-                df_temp["PIT_DateTime"] = pd.to_datetime(
-                    df_temp["PIT_DateTime"],
-                    errors="coerce",  # handles both "06/14/2025 16:46:52" and "2025-07-26T14:00:00"
-                    format="mixed"
-                )
-                df_temp["PIT_DateTime"] = df_temp["PIT_DateTime"].dt.strftime(OUT_FMT).fillna("")
+            # Add the filename column
+            df_temp['RF_File'] = filename
+            df_temp['Burrow'] = df_temp['RF_File'].astype(str).str[-7:-4]
+            df_temp["Burrow"] = df_temp["Burrow"].astype(str).apply(clean_burrow)
 
-                # remove rows with invalid PIT_ID length, etc.
-                df_temp = df_temp[
-                    ~df_temp["PIT_ID"].str.upper().isin({"STARTUP", "RUNNING"})
-                    & pd.to_numeric(df_temp["Rdr"], errors="coerce").notna()
-                    & df_temp["PIT_ID"].str.len().eq(EXPECTED_LEN)
-                ].copy()
-                # reset index after filtering
-                df_temp = df_temp.reset_index(drop=True)
-                
-                all_dfs.append(df_temp)
-            except Exception as e:
-                print(f"Error reading {filename}: {e}")
+            # Normalize types for string operations
+            df_temp["PIT_ID"] = df_temp["PIT_ID"].astype(str)
+            df_temp["Rdr"] = df_temp["Rdr"].astype(str)
+            df_temp["PIT_DateTime"] = df_temp["PIT_DateTime"].astype(str)
+
+            # Format PIT_DateTime to standard format
+            df_temp["PIT_DateTime"] = pd.to_datetime(
+                df_temp["PIT_DateTime"],
+                errors="coerce",  # handles both "06/14/2025 16:46:52" and "2025-07-26T14:00:00"
+                format="mixed"
+            )
+            df_temp["PIT_DateTime"] = df_temp["PIT_DateTime"].dt.strftime(OUT_FMT).fillna("")
+
+            # remove rows with invalid PIT_ID length, etc.
+            df_temp = df_temp[
+                ~df_temp["PIT_ID"].str.upper().isin({"STARTUP", "RUNNING"})
+                & pd.to_numeric(df_temp["Rdr"], errors="coerce").notna()
+                & df_temp["PIT_ID"].str.len().eq(EXPECTED_LEN)
+            ].copy()
+            # reset index after filtering
+            df_temp = df_temp.reset_index(drop=True)
+            
+            all_dfs.append(df_temp)
+        except Exception as e:
+            print(f"Error reading {filename}: {e}")
 
     if not all_dfs:
         print("No matching files found.")
@@ -1063,7 +1078,7 @@ def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
             ]
             matched_count = len(matched_rows)
             join_widgetslabel_1.config(
-                text=f"MOM Traces / RFID ({total_rows} bird weights found, {matched_count} attached to RFID)"
+                text=f"Combined MOM Traces / RFID ({total_rows} bird weights found, {matched_count} attached to RFID)"
             )
         except Exception:
             pass
@@ -1544,8 +1559,7 @@ def create_output_frame_var(parent, prefix: str = "", n: int = 3,
     else:
         label_texts = list(label_texts[:n]) + [f"Section {i+1}" for i in range(len(label_texts), n)]
 
-    frame = tk.Frame(parent, width=width, height=height, bd=1, relief=tk.SOLID)
-    frame.pack_propagate(False)
+    frame = tk.Frame(parent, bd=1, relief=tk.SOLID)
 
     labels: dict[str, tk.Label] = {}
     text_widgets: dict[str, tk.Text] = {}
@@ -1567,7 +1581,7 @@ def create_output_frame_var(parent, prefix: str = "", n: int = 3,
         sb.pack(side=tk.RIGHT, fill=tk.Y)
 
         t_key = f"t{col+1}"
-        txt = tk.Text(sub, width=width, height=height, yscrollcommand=sb.set)
+        txt = tk.Text(sub, width=width, height=height, yscrollcommand=sb.set, wrap="none")
         txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb.config(command=txt.yview)
 
@@ -1625,11 +1639,21 @@ root.title(vAppName)
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
 
-# Calculate window size (80% of screen width) - changed to 0.5 for testing on big screen - detect screen size?
-window_width = int(screen_width * 0.5)
-window_height = int(screen_height * 0.5)
+# Layout sizing constants (character widths converted to pixels approximately for Courier 16).
+SIDE_COLS = 51
+JOIN_FULL_COLS = 133  # Sum of JOIN display widths + inter-column spaces.
+CHAR_PX = 10
+GUTTER_PX = 120       # Internal frame padding, borders, and scrollbars.
+WINDOW_MARGIN_PX = 40
+
+# Open at 10% wider than minimum width needed to show full data columns.
+min_needed_width = int((2 * SIDE_COLS + JOIN_FULL_COLS) * CHAR_PX + GUTTER_PX)
+window_width = int(min_needed_width * 1.10)
+window_width = min(screen_width - WINDOW_MARGIN_PX, max(1100, window_width))
+window_height = max(700, int(screen_height * 0.90))
 
 root.geometry(f"{window_width}x{window_height}")
+root.minsize(min(min_needed_width, screen_width - WINDOW_MARGIN_PX), min(700, screen_height))
 
 ##########################
 # Create a parent container for RFID + MOM buttons side-by-side
@@ -1716,37 +1740,56 @@ if Show_Buttons:
 #   Create the output frames 
 # ####
 output_container = tk.Frame(root)
-output_container.pack(side=tk.TOP, pady=(20, 0))  # 20 points below button frames
+output_container.pack(side=tk.TOP, pady=(20, 10), padx=10, fill=tk.BOTH, expand=True)
+
+# Keep left panes the same width; let heights and combined pane adapt to the window.
+side_rows = max(18, min(42, int((window_height - 220) / 22)))
+wide_layout = window_width >= min_needed_width
+
+join_cols_wide = max(90, int((window_width - (2 * SIDE_COLS * CHAR_PX) - GUTTER_PX) / CHAR_PX))
+join_cols_wide = min(join_cols_wide, 220)
+join_cols_narrow = max(110, min(180, int((window_width - 80) / CHAR_PX)))
 
 if False:
     pass
 else:
-    # Three columns with your original labels
-    output_widgets = create_output_frame_var(output_container, n=1, height=20,
-                                        label_texts=["RFIDs"])
-    output_widgets["frame"].grid(row=0, column=0, padx=(0, 25), pady=0) 
+    # Three panes with responsive placement.
+    output_widgets = create_output_frame_var(
+        output_container, n=1, width=SIDE_COLS, height=side_rows, label_texts=["RFIDs"]
+    )
+    mom_widgets = create_output_frame_var(
+        output_container, prefix="mom_", n=1, width=SIDE_COLS, height=side_rows, label_texts=["Traces"]
+    )
 
-    # Two columns for MOM
-    mom_widgets = create_output_frame_var(output_container, prefix="mom_", n=1,height=20,
-                                    label_texts=["Traces"])
-    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(25, 0), pady=0)
-
-    # Make a join container for the joined data
-    # Create the join_container frame (1 text widget, width=150, custom label)
     join_widgets = create_output_frame_var(
-        parent=root,                      # or the parent container you want it under
-        prefix="join_widgets",                   # prefix for widget keys,
-        n=1,                              # only 1 text widget
-        width=140,                        # wider text widget
-        height=50,                        # same height as others
-        label_texts=["MOM Traces / RFID"]       # custom label
-)
+        parent=output_container,
+        prefix="join_widgets",
+        n=1,
+        width=join_cols_wide if wide_layout else join_cols_narrow,
+        height=side_rows if wide_layout else max(side_rows + 6, 24),
+        label_texts=["MOM Traces / RFID"]
+    )
 join_widgetsframe = join_widgets["join_widgetsframe"]
 join_widgetst1 = join_widgets["join_widgetst1"]  # explicit for linters    
 
-# Place join_container below the previous container
-# join_widgets["join_widgets_frame"].pack(side=tk.TOP, pady=(20, 0))
-join_widgets["join_widgetsframe"].pack(side=tk.TOP, pady=(20, 0))
+if wide_layout:
+    # Wide screen: RFID + Traces on left, combined output on the right.
+    output_widgets["frame"].grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
+    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 10), pady=0, sticky="nsew")
+    join_widgets["join_widgetsframe"].grid(row=0, column=2, padx=(0, 0), pady=0, sticky="nsew")
+    output_container.grid_columnconfigure(0, weight=0)
+    output_container.grid_columnconfigure(1, weight=0)
+    output_container.grid_columnconfigure(2, weight=1)
+    output_container.grid_rowconfigure(0, weight=1)
+else:
+    # Narrow screen: keep RFID and Traces on top, combined output below.
+    output_widgets["frame"].grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
+    mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 0), pady=0, sticky="nsew")
+    join_widgets["join_widgetsframe"].grid(row=1, column=0, columnspan=2, padx=(0, 0), pady=(12, 0), sticky="nsew")
+    output_container.grid_columnconfigure(0, weight=1)
+    output_container.grid_columnconfigure(1, weight=1)
+    output_container.grid_rowconfigure(0, weight=1)
+    output_container.grid_rowconfigure(1, weight=1)
 
 
 # Make them a font I can see
@@ -1761,10 +1804,6 @@ assign_widget_refs(mom_widgets)
 assign_widget_refs(join_widgets)
 if do_print:
     print(join_widgets)
-
-# Keep output frames centered
-output_container.grid_columnconfigure(0, weight=1)
-output_container.grid_columnconfigure(1, weight=1)
 
 
 
