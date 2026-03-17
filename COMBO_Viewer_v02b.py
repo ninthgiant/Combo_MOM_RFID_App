@@ -49,7 +49,8 @@ vTesting_Folder = "/Users/bobmauck/Dropbox/BIG_Science/MOMs/Testing/Sam_Data"  #
 
 global vVersString
 global vAppName
-vVersString = " (v_02.4b)"  ## upDATE AS NEEDED - .4 makes one Burr more efficient
+vVersString = " (v_02.5b)"  ## upDATed March 17, 2026
+# 2.5 adds ability to manually join MOM and RFID records by selecting lines in the text windows and clicking a button - this is for those cases where the automatic join doesn't work well because of missing or noisy data. It also adds a column to the joined output that flags records that were manually joined.
 vAppName = "Combo Viewer" + vVersString
 if do_print:
     print(f"Starting {vVersString} - {vAppName}")
@@ -63,6 +64,10 @@ if do_print:
 #       v_02.3b - Now removes duplicates that are very close in time before matching MOM to RFID
 #       v_02.4b - GUI update - One Burr more efficient (only opens relevant RFID files first)change screen layout based on user screen size
 ################
+
+# Keep references to displayed rows so manual join can use selected lines.
+current_rfid_display_df = pd.DataFrame()
+current_mom_display_df = pd.DataFrame()
 
 ########################### 
 #   function: format_time_cols  
@@ -246,6 +251,40 @@ def set_table_with_fixed_header(body_widget: tk.Text, header_widget: tk.Text | N
     body_widget.insert(tk.END, body_text)
 
 
+def enable_line_selection(text_widget: tk.Text):
+    """
+    Single-click selects a full row in the text widget body.
+    """
+    def _set_line_selection(line: str):
+        text_widget.tag_remove(tk.SEL, "1.0", tk.END)
+        text_widget.tag_add(tk.SEL, f"{line}.0", f"{line}.end")
+        text_widget.mark_set(tk.INSERT, f"{line}.0")
+
+    def _select_line(event):
+        idx = text_widget.index(f"@{event.x},{event.y}")
+        line = idx.split(".")[0]
+        text_widget.focus_set()
+        _set_line_selection(line)
+        return "break"
+
+    def _keep_single_line(_event=None):
+        try:
+            sel_first = text_widget.index(tk.SEL_FIRST)
+            sel_last = text_widget.index(tk.SEL_LAST)
+        except tk.TclError:
+            return
+        first_line = sel_first.split(".")[0]
+        last_line = sel_last.split(".")[0]
+        if first_line != last_line:
+            _set_line_selection(first_line)
+        return "break"
+
+    text_widget.bind("<Button-1>", _select_line)
+    text_widget.bind("<Shift-Button-1>", _select_line)
+    text_widget.bind("<B1-Motion>", lambda _e: "break")
+    text_widget.bind("<<Selection>>", _keep_single_line)
+
+
 ##########################
 #   function: populate_RFID_Windows
 #       Takes a dataframe and puts it in the t1 window
@@ -254,6 +293,7 @@ def set_table_with_fixed_header(body_widget: tk.Text, header_widget: tk.Text | N
 #       utility function for GUI
 ########
 def populate_RFID_Windows(df_rfid):
+    global current_rfid_display_df
 
     if df_rfid.empty:
         messagebox.showwarning("Warning", "DataFrame is empty. Please load data first.")
@@ -261,6 +301,7 @@ def populate_RFID_Windows(df_rfid):
     
     # Sort by DateTime
     df_rfid = df_rfid.sort_values(by=["Burrow", "PIT_DateTime"]).reset_index(drop=True)
+    current_rfid_display_df = df_rfid.copy()
 
     # Clear existing content in t1, t2, and t3
     clear_text_widgets(output_widgets)
@@ -388,10 +429,13 @@ def format_df_custom(df, mode="MOM"):
 #       Also updates the Days menu and Unique Tags menu
 #       Updates the label showing the number of records
 def populate_mom_Windows(df_mom):
+    global current_mom_display_df
 
     if df_mom.empty:
         messagebox.showwarning("Warning", "DataFrame is empty. Please load data first.")
         return
+
+    current_mom_display_df = df_mom.reset_index(drop=True).copy()
 
     # Clear existing content in t1, t2, and t3, adjusts for # widgets
     clear_text_widgets(mom_widgets)
@@ -421,17 +465,14 @@ def populate_mom_Windows(df_mom):
 #       Puts it in the global dataframe
 #       Then populates the windows with that data
 ########    
-def load_all_MOM_files():
+def load_all_MOM_files(one_Burr: str = None):
     global all_mom # use this to hold the dataframe for all MOM data for combo work?
-    df_all_mom = get_All_Mom_data()
-    # remove known calibratoin data which occur in pairs 
+    # File-menu MOM loading should show all lines found in the selected files.
+    df_all_mom = get_All_Mom_data(one_Burr=one_Burr, keep_all_rows=True)
 
     if df_all_mom.empty:
         print("No matching files found.")
         return pd.DataFrame(columns=['MOM_File', 'Segment', 'DateTime', 'Wt', 'Burrow'])
-
-    # Combine and drop duplicates
-    df_all_mom = df_all_mom.drop_duplicates().reset_index(drop=True)
 
     df_MOM = df_all_mom.copy()
 
@@ -442,30 +483,30 @@ def load_all_MOM_files():
         'Wt_Min_Slope': 'Wt'
     }, inplace=True)
 
-    df_valid_mom = remove_spurious_pairs(df_MOM, col="Wt", low_val=50, high_val=80, tol=1.0)
-
-        # Sort by MOM_File then MOM_Time
-    df_valid_mom = df_valid_mom.sort_values(
-        by=["Burrow", "MOM_File", "DateTime"], ignore_index=True
+    # Keep all rows and preserve source DateTime values for display.
+    df_valid_mom = df_MOM.sort_values(
+        by=["Burrow", "MOM_File"], ignore_index=True
     )
-
-    # Make sure DateTime is coerced to datetime (bad values become NaT)
-    df_valid_mom["DateTime"] = pd.to_datetime(df_valid_mom["DateTime"], errors="coerce")
-
-    # Drop rows where DateTime is NaT (invalid or gibberish)
-    df_valid_mom = df_valid_mom.dropna(subset=["DateTime"])
 
 
     # print(df_all_rfid.head(10))  # Print first 10 rows for verification
     # populate_mom_Windows(df_all_mom[['MOM_File', 'Segment', 'DateTime', 'Wt_Min_Slope', 'Burrow']]) # only if we have wider text window
     print("populate_mom_Windows")
-    populate_mom_Windows(df_valid_mom[['Burrow', 'DateTime',  'Wt']]) # moved this code to this function 7/18/2024 - can use it with one file or many files
+    populate_mom_Windows(df_valid_mom) # moved this code to this function 7/18/2024 - can use it with one file or many files
 
     #### get a list of unique burrows
     burrow_df = pd.DataFrame({"Burrow": sorted(df_valid_mom["Burrow"].dropna().unique())})
     
     # return df_valid_mom, burrow_df
     return df_valid_mom 
+
+
+def load_one_burrow_MOM_files():
+    val = simpledialog.askstring("Load MOM: One Burrow", "Enter burrow number (e.g., 7 or 007):")
+    if not val:
+        return None
+    target = str(val).zfill(3)
+    return load_all_MOM_files(one_Burr=target)
 
 
 ##########################
@@ -595,12 +636,12 @@ def get_All_RFID_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
 #       Puts it in the global dataframe
 #       Then populates the windows with that data
 ########    
-def load_all_RFID_files():
+def load_all_RFID_files(one_Burr: str = None):
     # global all_rfid # use this to hold the dataframe for all RFID data for combo work?
-    df_all_rfid = get_All_RFID_data()
+    df_all_rfid = get_All_RFID_data(one_Burr=one_Burr)
     
-    if df_all_rfid.empty:
-        messagebox("No RFID folder chosen")
+    if df_all_rfid is None or df_all_rfid.empty:
+        messagebox.showwarning("Find Data", "No RFID data found.")
         return None
     else:
         df_all_rfid = format_time_cols(df_all_rfid, date_fmt, cols=['PIT_DateTime'])
@@ -620,8 +661,16 @@ def load_all_RFID_files():
             by=["Burrow", "PIT_DateTime"], ignore_index=True
         )
 
-        populate_RFID_Windows(df_all_rfid[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
+        populate_RFID_Windows(df_all_rfid)
         return df_all_rfid 
+
+
+def load_one_burrow_RFID_files():
+    val = simpledialog.askstring("Load RFID: One Burrow", "Enter burrow number (e.g., 7 or 007):")
+    if not val:
+        return None
+    target = str(val).zfill(3)
+    return load_all_RFID_files(one_Burr=target)
 
 ##########################
 #   function: earliest_per_pit
@@ -955,7 +1004,7 @@ def build_final_combo_MOM_RFID(df_WtFiles: pd.DataFrame,
         'Trace_Segment_Num' -> 'Segment'
     """
 #######
-def get_All_Mom_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
+def get_All_Mom_data(folder: str = None, one_Burr: str = None, keep_all_rows: bool = False) -> pd.DataFrame:
 
     cols_to_import = ['File', 'Trace_Segment_Num', 'DateTime', 'Wt_Min_Slope']
 
@@ -1004,12 +1053,14 @@ def get_All_Mom_data(folder: str = None, one_Burr: str = None) -> pd.DataFrame:
         print("No matching files found.")
         return pd.DataFrame(columns=['MOM_File', 'Segment', 'DateTime', 'Wt_Min_Slope', 'Burrow'])
 
-    # Combine and drop duplicates
-    df_MOM = pd.concat(all_dfs, ignore_index=True).drop_duplicates()
+    # Combine files; keep-all mode preserves every parsed line.
+    df_MOM = pd.concat(all_dfs, ignore_index=True)
 
-    # DROP ANY ROWS WITH MISSING Wt_Min_Slope
-    df_MOM["Wt_Min_Slope"] = pd.to_numeric(df_MOM["Wt_Min_Slope"], errors="coerce")
-    df_MOM = df_MOM.dropna(subset=["Wt_Min_Slope"]).reset_index(drop=True)
+    if not keep_all_rows:
+        df_MOM = df_MOM.drop_duplicates()
+        # DROP ANY ROWS WITH MISSING Wt_Min_Slope
+        df_MOM["Wt_Min_Slope"] = pd.to_numeric(df_MOM["Wt_Min_Slope"], errors="coerce")
+        df_MOM = df_MOM.dropna(subset=["Wt_Min_Slope"]).reset_index(drop=True)
 
 
     # Rename columns
@@ -1078,12 +1129,12 @@ def do_Join_MOM_RFID(folder: str = None, one_Burr: str = None):
         mom_display = df_WtFiles_clean.rename(columns={"Wt_Min_Slope": "Wt"}).copy()
         mom_display["DateTime"] = pd.to_datetime(mom_display["DateTime"], errors="coerce")
         mom_display = mom_display.sort_values(["Burrow", "DateTime"])
-        populate_mom_Windows(mom_display[['Burrow', 'DateTime', 'Wt']])
+        populate_mom_Windows(mom_display)
 
         rfid_display = df_rfid.copy()
         rfid_display["PIT_DateTime"] = pd.to_datetime(rfid_display["PIT_DateTime"], errors="coerce")
         rfid_display = rfid_display.sort_values(["Burrow", "PIT_DateTime"])
-        populate_RFID_Windows(rfid_display[['PIT_DateTime', 'Burrow', 'Rdr', 'PIT_ID']])
+        populate_RFID_Windows(rfid_display)
 
         # Update label with summary counts
         try:
@@ -1653,6 +1704,159 @@ def assign_widget_refs(widget_dict, namespace=None):
 def quit_app():
     root.quit()
 
+
+def _build_manual_join_body_line() -> str | None:
+    global current_rfid_display_df, current_mom_display_df
+
+    def _selected_idx(text_widget: tk.Text):
+        try:
+            sel_first = text_widget.index(tk.SEL_FIRST)
+        except tk.TclError:
+            return None
+        return max(0, int(sel_first.split(".")[0]) - 1)
+
+    i_rfid = _selected_idx(t1)
+    i_mom = _selected_idx(mom_t1)
+
+    if i_rfid is None or i_mom is None:
+        messagebox.showwarning("Join Manually", "Select one line in RFID and one line in Traces.")
+        return
+
+    if current_rfid_display_df.empty or current_mom_display_df.empty:
+        messagebox.showwarning("Join Manually", "Load RFID and Traces data first.")
+        return
+
+    if i_rfid >= len(current_rfid_display_df) or i_mom >= len(current_mom_display_df):
+        messagebox.showwarning("Join Manually", "Selection is out of range for current display.")
+        return None
+
+    rfid_row = current_rfid_display_df.iloc[i_rfid]
+    mom_row = current_mom_display_df.iloc[i_mom]
+
+    one_join = pd.DataFrame([{
+        "Burrow": clean_burrow(mom_row.get("Burrow", "")),
+        "MOM_File": mom_row.get("MOM_File", ""),
+        "MOM_Time": mom_row.get("DateTime", ""),
+        "Wt": mom_row.get("Wt", np.nan),
+        "RFID": rfid_row.get("PIT_ID", ""),
+        "N": 1,
+        "Rdr": rfid_row.get("Rdr", ""),
+        "Closest_RFID_Time": rfid_row.get("PIT_DateTime", ""),
+        "RF_File": rfid_row.get("RF_File", "")
+    }])
+
+    table_str = format_df_custom(one_join, "JOIN")
+    header_text, body_text = split_table_for_fixed_header(table_str)
+
+    join_header = join_widgets.get("join_widgetst1_header")
+    if join_header is not None and not join_header.get("1.0", tk.END).strip():
+        join_header.config(state=tk.NORMAL)
+        join_header.delete("1.0", tk.END)
+        join_header.insert(tk.END, header_text)
+        join_header.config(state=tk.DISABLED)
+
+    return body_text.strip() if body_text.strip() else None
+
+
+def on_join_button():
+    body_line = _build_manual_join_body_line()
+    if body_line is None:
+        return
+
+    existing = join_widgetst1.get("1.0", tk.END).rstrip("\n")
+    join_widgetst1.delete("1.0", tk.END)
+    if existing:
+        join_widgetst1.insert(tk.END, existing + "\n" + body_line)
+    else:
+        join_widgetst1.insert(tk.END, body_line)
+
+
+def on_insert_button():
+    body_line = _build_manual_join_body_line()
+    if body_line is None:
+        return
+
+    lines = join_widgetst1.get("1.0", tk.END).splitlines()
+    try:
+        sel_first = join_widgetst1.index(tk.SEL_FIRST)
+        line_no = int(sel_first.split(".")[0])
+    except tk.TclError:
+        line_no = None
+
+    if line_no is None or line_no < 1 or line_no > len(lines):
+        lines.append(body_line)
+    else:
+        lines.insert(line_no - 1, body_line)
+
+    join_widgetst1.delete("1.0", tk.END)
+    if lines:
+        join_widgetst1.insert(tk.END, "\n".join(lines))
+
+
+def on_remove_button():
+    try:
+        sel_first = join_widgetst1.index(tk.SEL_FIRST)
+    except tk.TclError:
+        messagebox.showwarning("Join Manually", "Select one line in MOM Traces / RFID to remove.")
+        return
+
+    line_no = int(sel_first.split(".")[0])
+    lines = join_widgetst1.get("1.0", tk.END).splitlines()
+    if line_no < 1 or line_no > len(lines):
+        messagebox.showwarning("Join Manually", "Selected line is out of range.")
+        return
+
+    del lines[line_no - 1]
+    join_widgetst1.delete("1.0", tk.END)
+    if lines:
+        join_widgetst1.insert(tk.END, "\n".join(lines))
+
+
+def on_clear_all_button():
+    join_widgetst1.delete("1.0", tk.END)
+    join_header = join_widgets.get("join_widgetst1_header")
+    if join_header is not None:
+        join_header.config(state=tk.NORMAL)
+        join_header.delete("1.0", tk.END)
+        join_header.config(state=tk.DISABLED)
+
+
+def on_save_button():
+    join_header = join_widgets.get("join_widgetst1_header")
+    header_text = ""
+    if join_header is not None:
+        header_text = join_header.get("1.0", tk.END).rstrip("\n")
+    body_text = join_widgetst1.get("1.0", tk.END).rstrip("\n")
+
+    out_text = ""
+    if header_text:
+        out_text = header_text
+    if body_text:
+        out_text = f"{out_text}\n{body_text}" if out_text else body_text
+
+    if not out_text.strip():
+        messagebox.showwarning("Save", "No output to save.")
+        return
+
+    output_file_path = filedialog.asksaveasfilename(
+        title="Save MOM Traces / RFID Output As",
+        defaultextension=".txt",
+        filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+    )
+    if not output_file_path:
+        return
+
+    with open(output_file_path, "w", encoding="utf-8") as f:
+        f.write(out_text + "\n")
+
+
+def enable_manual_join_mode():
+    button_join_action.config(state=tk.NORMAL)
+    button_insert_action.config(state=tk.NORMAL)
+    button_remove_action.config(state=tk.NORMAL)
+    button_clear_all_action.config(state=tk.NORMAL)
+    button_save_action.config(state=tk.NORMAL)
+
 ##########################
 # Create the main application windowp
 #######
@@ -1672,10 +1876,11 @@ SIDE_COLS = 51
 JOIN_FULL_COLS = 133  # Sum of JOIN display widths + inter-column spaces.
 CHAR_PX = 10
 GUTTER_PX = 120       # Internal frame padding, borders, and scrollbars.
+BUTTON_COL_PX = 130   # Space reserved for Join/Remove button column.
 WINDOW_MARGIN_PX = 40
 
 # Open at 10% wider than minimum width needed to show full data columns.
-min_needed_width = int((2 * SIDE_COLS + JOIN_FULL_COLS) * CHAR_PX + GUTTER_PX)
+min_needed_width = int((2 * SIDE_COLS + JOIN_FULL_COLS) * CHAR_PX + GUTTER_PX + BUTTON_COL_PX)
 window_width = int(min_needed_width * 1.10)
 window_width = min(screen_width - WINDOW_MARGIN_PX, max(1100, window_width))
 window_height = max(700, int(screen_height * 0.90))
@@ -1774,7 +1979,7 @@ output_container.pack(side=tk.TOP, pady=(24, 16), padx=18, fill=tk.BOTH, expand=
 side_rows = max(18, min(42, int((window_height - 220) / 22)))
 wide_layout = window_width >= min_needed_width
 
-join_cols_wide = max(90, int((window_width - (2 * SIDE_COLS * CHAR_PX) - GUTTER_PX) / CHAR_PX))
+join_cols_wide = max(90, int((window_width - (2 * SIDE_COLS * CHAR_PX) - GUTTER_PX - BUTTON_COL_PX) / CHAR_PX))
 join_cols_wide = min(join_cols_wide, 220)
 join_cols_narrow = max(110, min(180, int((window_width - 80) / CHAR_PX)))
 
@@ -1797,6 +2002,22 @@ else:
         height=side_rows if wide_layout else max(side_rows + 6, 24),
         label_texts=["MOM Traces / RFID"]
     )
+
+action_buttons_frame = tk.Frame(output_container, bd=1, relief=tk.SOLID, padx=8, pady=10)
+button_top_spacer = tk.Frame(action_buttons_frame, height=72)
+button_top_spacer.pack(side=tk.TOP, fill=tk.X)
+button_top_spacer.pack_propagate(False)
+button_join_action = tk.Button(action_buttons_frame, text="Join", width=12, state=tk.DISABLED, command=on_join_button)
+button_insert_action = tk.Button(action_buttons_frame, text="Insert", width=12, state=tk.DISABLED, command=on_insert_button)
+button_remove_action = tk.Button(action_buttons_frame, text="Remove", width=12, state=tk.DISABLED, command=on_remove_button)
+button_clear_all_action = tk.Button(action_buttons_frame, text="Clear All", width=12, state=tk.DISABLED, command=on_clear_all_button)
+button_save_action = tk.Button(action_buttons_frame, text="Save", width=12, state=tk.DISABLED, command=on_save_button)
+button_join_action.pack(side=tk.TOP, pady=(8, 8))
+button_insert_action.pack(side=tk.TOP, pady=(0, 8))
+button_remove_action.pack(side=tk.TOP, pady=(0, 8))
+button_clear_all_action.pack(side=tk.TOP, pady=(12, 8))
+button_save_action.pack(side=tk.TOP, pady=(12, 8))
+
 join_widgetsframe = join_widgets["join_widgetsframe"]
 join_widgetst1 = join_widgets["join_widgetst1"]  # explicit for linters    
 
@@ -1804,20 +2025,23 @@ if wide_layout:
     # Wide screen: RFID + Traces on left, combined output on the right.
     output_widgets["frame"].grid(row=0, column=0, padx=(0, 14), pady=(6, 6), sticky="nsew")
     mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 14), pady=(6, 6), sticky="nsew")
-    join_widgets["join_widgetsframe"].grid(row=0, column=2, padx=(0, 6), pady=(6, 6), sticky="nsew")
+    action_buttons_frame.grid(row=0, column=2, padx=(0, 14), pady=(6, 6), sticky="ns")
+    join_widgets["join_widgetsframe"].grid(row=0, column=3, padx=(0, 6), pady=(6, 6), sticky="nsew")
     output_container.grid_columnconfigure(0, weight=0)
     output_container.grid_columnconfigure(1, weight=0)
-    output_container.grid_columnconfigure(2, weight=1)
+    output_container.grid_columnconfigure(2, weight=0)
+    output_container.grid_columnconfigure(3, weight=1)
     output_container.grid_rowconfigure(0, weight=1)
 else:
     # Narrow screen: keep RFID and Traces on top, combined output below.
     output_widgets["frame"].grid(row=0, column=0, padx=(0, 12), pady=(6, 6), sticky="nsew")
     mom_widgets["mom_frame"].grid(row=0, column=1, padx=(0, 6), pady=(6, 6), sticky="nsew")
-    join_widgets["join_widgetsframe"].grid(row=1, column=0, columnspan=2, padx=(0, 6), pady=(14, 6), sticky="nsew")
+    action_buttons_frame.grid(row=1, column=0, columnspan=2, padx=(0, 6), pady=(8, 8))
+    join_widgets["join_widgetsframe"].grid(row=2, column=0, columnspan=2, padx=(0, 6), pady=(8, 6), sticky="nsew")
     output_container.grid_columnconfigure(0, weight=1)
     output_container.grid_columnconfigure(1, weight=1)
     output_container.grid_rowconfigure(0, weight=1)
-    output_container.grid_rowconfigure(1, weight=1)
+    output_container.grid_rowconfigure(2, weight=1)
 
 
 # Make them a font I can see
@@ -1833,6 +2057,11 @@ assign_widget_refs(join_widgets)
 if do_print:
     print(join_widgets)
 
+# Allow row-level selection in RFID and MOM/Traces panes.
+enable_line_selection(t1)
+enable_line_selection(mom_t1)
+enable_line_selection(join_widgetst1)
+
 
 
 ##########################
@@ -1847,13 +2076,22 @@ file_menu = tk.Menu(menubar, tearoff=False)
 menubar.add_cascade(label="File", menu=file_menu)
 file_menu.add_command(label="Quit", command=quit_app)
 
-# Process menu mirrors the Join RFID+MOM Data button
-process_menu = tk.Menu(menubar, tearoff=False)
-menubar.add_cascade(label="Process", menu=process_menu)
-# process_menu.add_command(label="Join BSM/RFID", command=do_Join_MOM_RFID)
+# Process Manual menu
+process_manual_menu = tk.Menu(menubar, tearoff=False)
+menubar.add_cascade(label="Process Manual", menu=process_manual_menu)
+process_manual_menu.add_command(label="Load RFID Files: All", command=load_all_RFID_files)
+process_manual_menu.add_command(label="Load RFID Files: One Burrow", command=load_one_burrow_RFID_files)
+process_manual_menu.add_separator()
+process_manual_menu.add_command(label="Load MOM Files: All", command=load_all_MOM_files)
+process_manual_menu.add_command(label="Load MOM Files: One Burrow", command=load_one_burrow_MOM_files)
+process_manual_menu.add_separator()
+process_manual_menu.add_command(label="Join Manually", command=enable_manual_join_mode)
 
-process_menu.add_command(label="Join GPS/RFID", command=lambda: do_Join_MOM_RFID("DEBUG"))
-process_menu.add_command(label="Process One Burrow",command=do_Join_One_Burrow)
+# Process Automatic menu
+process_auto_menu = tk.Menu(menubar, tearoff=False)
+menubar.add_cascade(label="Process Automatic", menu=process_auto_menu)
+process_auto_menu.add_command(label="Join GPS/RFID", command=lambda: do_Join_MOM_RFID("DEBUG"))
+process_auto_menu.add_command(label="Process One Burrow", command=do_Join_One_Burrow)
 
 
 ##########################
