@@ -61,6 +61,7 @@ if do_print:
 #       v_02.1b - Added functions to changing the window for finding rFid, other changes
 #       v_02.2b - Changed output preserve DateTime format - don't use space delimiter in Excel import
 #       v_02.3b - Now removes duplicates that are very close in time before matching MOM to RFID
+#       v_02.4b - GUI update - One Burr more efficient (only opens relevant RFID files first)change screen layout based on user screen size
 ################
 
 ########################### 
