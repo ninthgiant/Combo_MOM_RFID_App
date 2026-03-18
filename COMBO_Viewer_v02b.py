@@ -68,6 +68,7 @@ if do_print:
 # Keep references to displayed rows so manual join can use selected lines.
 current_rfid_display_df = pd.DataFrame()
 current_mom_display_df = pd.DataFrame()
+HELP_FILENAME = "COMBO_Viewer_HELP.md"
 
 ########################### 
 #   function: format_time_cols  
@@ -1705,6 +1706,33 @@ def quit_app():
     root.quit()
 
 
+def show_help_window():
+    help_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), HELP_FILENAME)
+    try:
+        with open(help_path, "r", encoding="utf-8") as f:
+            help_text = f.read()
+    except OSError as e:
+        messagebox.showwarning("Help", f"Could not open help file:\n{help_path}\n\n{e}")
+        return
+
+    help_win = tk.Toplevel(root)
+    help_win.title("COMBO Viewer Help")
+    help_win.geometry("1000x700")
+
+    text_frame = tk.Frame(help_win)
+    text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    sb = Scrollbar(text_frame, orient="vertical")
+    sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    txt = tk.Text(text_frame, wrap="word", yscrollcommand=sb.set)
+    txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    sb.config(command=txt.yview)
+
+    txt.insert(tk.END, help_text)
+    txt.config(state=tk.DISABLED, font=("Courier", 14))
+
+
 def _build_manual_join_body_line() -> str | None:
     global current_rfid_display_df, current_mom_display_df
 
@@ -2092,6 +2120,11 @@ process_auto_menu = tk.Menu(menubar, tearoff=False)
 menubar.add_cascade(label="Process Automatic", menu=process_auto_menu)
 process_auto_menu.add_command(label="Join GPS/RFID", command=lambda: do_Join_MOM_RFID("DEBUG"))
 process_auto_menu.add_command(label="Process One Burrow", command=do_Join_One_Burrow)
+
+# Help menu
+help_menu = tk.Menu(menubar, tearoff=False)
+menubar.add_cascade(label="Help", menu=help_menu)
+help_menu.add_command(label="View Help", command=show_help_window)
 
 
 ##########################
